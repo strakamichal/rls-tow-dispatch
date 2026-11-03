@@ -113,7 +113,8 @@ quote = (callout + outboundRate × km to vehicle + loadedRate × km loaded)
   Off-Road Recovery share.
 - **Cap:** the quote never exceeds 90 % of what Off-Road Recovery pays for the same
   distances and skill level, using the recovery economy section (`offroadRecovery`),
-  including the recovery difficulty fee available at that level (0 below level 10, 1 500 from 10, 3 000 from 30). Recovery reference
+  including the recovery difficulty fee available at that level (0 below level 10, 1 500 from 10, 3 000 from 30;
+  RLS takes the fee per recovery spot, the cap uses the best fee reachable at that level). Recovery reference
   (RLS 2.8 `jobs/recovery/rewards.lua`):
   `(1500 + 100/km outbound + 250/km loaded + fee) × (1 + 2p²)`, `p = floor((level − 5) / 2) / 22`.
 
@@ -155,7 +156,8 @@ RLS logbook.
   fixed fine of **1 000 × tier multiplier × economy multiplier** and gives no XP.
 - A vehicle lost before custody (traffic, despawn, failed spawn) ends the job with no
   consequence and a message.
-- Map travel is not possible during an active job; the app explains why.
+- RLS offers no hook to block map travel for third-party jobs, so an active job pauses
+  when the player travels and resumes on return (as Off-Road Recovery does).
 
 ### Persistence
 
