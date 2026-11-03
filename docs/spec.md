@@ -46,7 +46,7 @@ the sense of "my car broke down, take it home or to a garage".
 
 Each offer shows: job type, tier, vehicle, weight, fault (Tow), distance from the
 player to the vehicle by road, route length with the vehicle loaded, destination
-name, quoted payout and time to expiry. Offers can be sorted by payout, payout per km
+name, quoted payout and time to expiry. Offers can be sorted by payout
 and distance to the vehicle, and filtered by job type, tier and maximum distance to
 the vehicle. A **Route** button sets navigation to the active job's next stop.
 

@@ -27,6 +27,27 @@
       </section>
 
       <template v-else-if="state">
+        <section v-if="message" class="notice">
+          <p>{{ message }}</p>
+        </section>
+
+        <article v-if="job" class="card active-card">
+          <span class="eyebrow">Active job · {{ phaseLabel(job) }}</span>
+          <div class="card-top">
+            <h3>{{ vehicleLabel(job) }}</h3>
+            <strong class="quote">{{ money(job.quote) }}</strong>
+          </div>
+          <dl>
+            <div><dt>Destination</dt><dd>{{ job.destinationName }}</dd></div>
+            <div><dt>{{ job.custody ? 'To destination' : 'To vehicle' }}</dt><dd>{{ distance(job.distanceToNextM) }}</dd></div>
+          </dl>
+          <p v-if="job.otherMap" class="hint">This job is on another map.</p>
+          <div class="actions">
+            <button type="button" class="secondary" @click="routeJob">Route</button>
+            <button type="button" class="danger" @click="confirmingCancel = true">Cancel</button>
+          </div>
+        </article>
+
         <section class="controls">
           <div class="control-row">
             <span class="label">Sort</span>
@@ -72,13 +93,13 @@
             <div><dt>Route loaded</dt><dd>{{ distance(offer.loadedM) }}</dd></div>
             <div><dt>Destination</dt><dd>{{ offer.destinationName }}</dd></div>
             <div><dt>Weight</dt><dd>{{ weight(offer.weightKg) }}</dd></div>
-            <div><dt>Per km</dt><dd>{{ money(perKm(offer)) }}</dd></div>
             <div><dt>Expires</dt><dd>{{ duration(offer.expiresInS) }}</dd></div>
           </dl>
           <div class="actions">
             <button type="button" class="secondary" :class="{ routed: offer.routed }" @click="route(offer.id)">
               {{ offer.routed ? 'Routing ✓' : 'Route' }}
             </button>
+            <button type="button" :disabled="!!job || busy" @click="accept(offer.id)">Accept</button>
           </div>
         </article>
 
@@ -94,6 +115,36 @@
 
       <footer v-if="state" class="footer">RLS {{ state.rlsVersion || 'not found' }}</footer>
     </main>
+
+    <div v-if="confirmingCancel && job" class="overlay">
+      <section class="modal">
+        <span class="eyebrow">Cancel job?</span>
+        <h2>{{ vehicleLabel(job) }}</h2>
+        <p v-if="job.cancelFine > 0">You already have the vehicle. Cancelling costs a fine of {{ money(job.cancelFine) }}.</p>
+        <p v-else>You have not taken the vehicle yet, so cancelling is free.</p>
+        <button type="button" class="danger" @click="cancelJob">Cancel job</button>
+        <button type="button" class="secondary" @click="confirmingCancel = false">Keep job</button>
+      </section>
+    </div>
+
+    <div v-if="completion" class="overlay">
+      <section class="modal">
+        <span class="eyebrow">Job complete</span>
+        <h2>{{ vehicleLabel(completion) }}</h2>
+        <ul class="breakdown">
+          <li><span>Quote</span><span>{{ money(completion.quote) }}</span></li>
+          <li v-if="completion.penalty > 0" class="penalty">
+            <span>Damage penalty</span><span>−{{ money(completion.penalty) }}</span>
+          </li>
+          <li v-for="part in completion.parts" :key="part.name" class="part">
+            <span>{{ part.name }} ({{ part.lostPercent }}%)</span><span>{{ money(part.value) }}</span>
+          </li>
+          <li class="total"><span>Paid</span><span>{{ money(completion.paid) }}</span></li>
+          <li><span>Recovery XP</span><span>+{{ completion.xp }}</span></li>
+        </ul>
+        <button type="button" @click="clearCompletion">Done</button>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -109,6 +160,9 @@ const props = defineProps({
 const POLL_MS = 1000
 
 const state = ref(null)
+const message = ref('')
+const busy = ref(false)
+const confirmingCancel = ref(false)
 const sortBy = ref('quote')
 const typeFilter = ref('all')
 const tierFilter = ref('all')
@@ -116,7 +170,6 @@ const maxDistanceKm = ref(0)
 
 const sortOptions = [
   { id: 'quote', label: 'Payout' },
-  { id: 'perKm', label: 'Per km' },
   { id: 'distance', label: 'Nearest' },
 ]
 const typeOptions = [
@@ -132,6 +185,9 @@ const distanceOptions = [
 ]
 
 const offers = computed(() => Array.isArray(state.value?.offers) ? state.value.offers : [])
+const job = computed(() => state.value?.activeJob || null)
+const completion = computed(() => state.value?.lastCompletion || null)
+const phaseLabel = j => ({ pickup: 'Pick up the vehicle', delivery: 'Deliver', completing: 'Completing' })[j.phase] || ''
 
 const tierOptions = computed(() => {
   const seen = new Map()
@@ -141,11 +197,6 @@ const tierOptions = computed(() => {
   return [...seen.values()]
 })
 
-const perKm = offer => {
-  const km = ((Number(offer.outboundM) || 0) + (Number(offer.loadedM) || 0)) / 1000
-  return km > 0 ? (Number(offer.quote) || 0) / km : 0
-}
-
 const visibleOffers = computed(() => {
   const list = offers.value.filter(offer =>
     (typeFilter.value === 'all' || offer.jobType === typeFilter.value) &&
@@ -153,7 +204,6 @@ const visibleOffers = computed(() => {
     (!maxDistanceKm.value || (Number(offer.distanceToVehicleM) || 0) <= maxDistanceKm.value * 1000))
   const key = {
     quote: offer => -(Number(offer.quote) || 0),
-    perKm: offer => -perKm(offer),
     distance: offer => Number(offer.distanceToVehicleM) || 0,
   }[sortBy.value]
   return list.sort((a, b) => key(a) - key(b))
@@ -182,6 +232,34 @@ async function refresh() {
 async function route(id) {
   if (!props.callLua) return
   await props.callLua('towRepoHub_core.routeToOffer', id)
+  refresh()
+}
+
+async function accept(id) {
+  if (!props.callLua || busy.value) return
+  busy.value = true
+  try {
+    const result = await props.callLua('towRepoHub_core.acceptOffer', id)
+    if (result == null) message.value = 'No answer from the game. The add-on may be out of date; reload Lua (Ctrl+L).'
+    else message.value = result.ok ? '' : (result.reason || 'The job could not be accepted.')
+  } finally {
+    busy.value = false
+    refresh()
+  }
+}
+
+async function cancelJob() {
+  confirmingCancel.value = false
+  if (props.callLua) await props.callLua('towRepoHub_core.cancelJob')
+  refresh()
+}
+
+async function routeJob() {
+  if (props.callLua) await props.callLua('towRepoHub_core.routeActiveJob')
+}
+
+async function clearCompletion() {
+  if (props.callLua) await props.callLua('towRepoHub_core.clearCompletion')
   refresh()
 }
 
@@ -311,6 +389,52 @@ dl {
   cursor: pointer;
   &.secondary { background: rgba(255, 255, 255, .14); }
   &.routed { background: #2f7d4a; }
+  &.danger { background: #a83a3a; }
+  &:disabled { opacity: .4; cursor: default; }
+}
+.active-card { border-color: rgba(143, 209, 139, .5); background: rgba(47, 125, 74, .18); }
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, .6);
+  z-index: 5;
+}
+.modal {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 16px;
+  border-radius: 12px;
+  background: #1a222d;
+  color: #eef3f8;
+  h2 { margin: 0; font-size: 1.1em; }
+  p { margin: 0; font-size: .9em; opacity: .85; }
+  button {
+    padding: 8px;
+    border: 0;
+    border-radius: 6px;
+    background: #3d7cc0;
+    color: #fff;
+    font: inherit;
+    cursor: pointer;
+    &.danger { background: #a83a3a; }
+    &.secondary { background: rgba(255, 255, 255, .14); }
+  }
+}
+.breakdown {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: .9em;
+  li { display: flex; justify-content: space-between; padding: 3px 0; }
+  .penalty { color: #e08a8a; }
+  .part { padding-left: 10px; font-size: .85em; opacity: .7; }
+  .total { border-top: 1px solid rgba(255, 255, 255, .2); margin-top: 4px; padding-top: 6px; font-weight: 600; color: #8fd18b; }
 }
 .empty {
   display: flex;

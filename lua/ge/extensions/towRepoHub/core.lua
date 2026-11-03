@@ -5,6 +5,7 @@
 local rlsVersion = require("towRepoHub/lib/rlsVersion")
 local pricing = require("towRepoHub/lib/pricing")
 local board = require("towRepoHub/lib/board")
+local jobRules = require("towRepoHub/lib/job")
 
 local M = {}
 
@@ -262,6 +263,8 @@ local function generateRepoOffer(state, level, fromPos)
     outboundM = outboundM,
     loadedM = loadedM,
     quote = quote,
+    -- Runtime only: the RLS spot and facility objects used on accept.
+    runtime = { spot = spot, dropSpot = dropSpot, dropSpots = entry.dropSpots },
   }
 end
 
@@ -299,6 +302,8 @@ local function addOffer(state)
   nextOfferId = nextOfferId + 1
   candidate.createdAt = simMinutes
   candidate.expiresAt = simMinutes + board.config.ttlMin
+  candidate.liveDistanceM = candidate.outboundM
+  candidate.liveFrom = vecToArray(fromPos)
   state.offers[#state.offers + 1] = candidate
   log("I", LOG_TAG, string.format("offer %d: %s %s %s -> %s, %.1f + %.1f km, %d (relaxed %d, %.0f ms)",
     candidate.id, candidate.tierLabel or "?", tostring(candidate.brand), tostring(candidate.name),
@@ -307,12 +312,30 @@ local function addOffer(state)
   return true
 end
 
+-- Re-measures the road distance from the player to one offer's vehicle per tick, so the board
+-- follows the player without routing six offers at once. The quote stays fixed.
+local LIVE_DISTANCE_MOVE_M = 50
+local liveDistanceIndex = 0
+
+local function refreshLiveDistance(state)
+  local count = #state.offers
+  if count == 0 then return end
+  local fromPos = playerPosition()
+  if not fromPos then return end
+  liveDistanceIndex = liveDistanceIndex % count + 1
+  local offer = state.offers[liveDistanceIndex]
+  if offer.liveFrom and fromPos:distance(arrayToVec(offer.liveFrom)) < LIVE_DISTANCE_MOVE_M then return end
+  offer.liveDistanceM = routeDistance(fromPos, arrayToVec(offer.pickupPos))
+  offer.liveFrom = vecToArray(fromPos)
+end
+
 local function tickBoard()
   if boardDisabledReason() then return end
   local state = currentBoard()
   if not state then return end
   local open = board.expire(state.offers, simMinutes)
   state.offers = open
+  refreshLiveDistance(state)
   if board.isDue(state, simMinutes) then
     board.scheduleNext(state, simMinutes, addOffer(state))
   end
@@ -325,9 +348,396 @@ local function findOffer(id)
   end
 end
 
+local function removeOffer(id)
+  local state = currentBoard()
+  for index, offer in ipairs(state and state.offers or {}) do
+    if offer.id == id then return table.remove(state.offers, index) end
+  end
+end
+
+local function getRouteLease()
+  if not routeLease then
+    local lease = tryRequire("overhaul/lib/activity/routeLease")
+    routeLease = lease and lease.new(LOG_TAG)
+  end
+  return routeLease
+end
+
+local function setRoute(pos)
+  local lease = getRouteLease()
+  return lease ~= nil and lease.set(pos, { clearPathOnReachingTarget = true })
+end
+
+-- Active job -------------------------------------------------------------------------------------------
+-- One job at a time. The target spawns on accept; custody starts when it leaves its spot; it is
+-- delivered when stopped within 5 m of the dealership spot. See lib/job.lua for the rules.
+
+local JOB_TICK_S = 0.5
+local LOGBOOK_ID = "towRepoHub.jobCompleted"
+
+local activeJob
+local lastCompletion
+local jobTimer = 0
+local recordJob
+local disposeTemporary
+local deliveryMarker
+
+-- The green checkpoint RLS repo shows at the delivery spot.
+local function showDeliveryMarker(pos)
+  if deliveryMarker then return end
+  local ok, marker = pcall(function()
+    local m = createObject("TSStatic")
+    m.shapeName = "art/shapes/interface/checkpoint_marker.dae"
+    m.scale = vec3(4, 4, 4)
+    m.useInstanceRenderData = true
+    m.instanceColor = ColorF(0, 0.8, 0.2, 0.7):asLinear4F()
+    m:setPosition(pos)
+    m:registerObject("towRepoHub_delivery_marker")
+    return m
+  end)
+  if ok then deliveryMarker = marker else log("W", LOG_TAG, "delivery marker failed: " .. tostring(marker)) end
+end
+
+local function clearDeliveryMarker()
+  if not deliveryMarker then return end
+  pcall(function() deliveryMarker:unregisterObject() end)
+  pcall(function() deliveryMarker:delete() end)
+  deliveryMarker = nil
+end
+
+local function vehicleLabel(job)
+  local label = ((job.brand or "") .. " " .. (job.name or "")):gsub("^%s+", ""):gsub("%s+$", "")
+  return label
+end
+
+local function reservationService()
+  local reservation = tryRequire("overhaul/lib/parking/reservation")
+  return reservation and reservation.service
+end
+
+local function releaseReservations(job)
+  local service = reservationService()
+  if not service then return end
+  for _, key in ipairs({ "pickupLive", "dropLive" }) do
+    if job[key] then pcall(service.releaseSpot, job[key], job.token) end
+    job[key] = nil
+  end
+end
+
+local function removeTargetVehicle(job)
+  local vehicleId = job.vehicleId
+  -- Cleared first: deleting fires onVehicleDestroyed, which must not treat this as a lost target.
+  job.vehicleId = nil
+  local vehicle = vehicleId and getObjectByID(vehicleId)
+  if vehicle then
+    if gameplay_traffic and gameplay_traffic.removeTraffic then pcall(gameplay_traffic.removeTraffic, vehicleId) end
+    -- Leave the target before deleting it if the player drove it to the destination.
+    if be:getPlayerVehicleID(0) == vehicleId then
+      local carrier = job.carrierId and getObjectByID(job.carrierId)
+      if carrier then be:enterVehicle(0, carrier) end
+    end
+    if core_vehicleBridge then pcall(core_vehicleBridge.executeAction, vehicle, "setFreeze", true) end
+    vehicle:delete()
+  end
+end
+
+-- Ends the active job: removes the target, releases spots and clears our route.
+local function endJob(job)
+  if activeJob == job then activeJob = nil end
+  releaseReservations(job)
+  removeTargetVehicle(job)
+  clearDeliveryMarker()
+  if routeLease then routeLease.clear() end
+  if disposeTemporary then disposeTemporary(); disposeTemporary = nil end
+end
+
+local function payout(spec, category)
+  local payment = overhaul_career_economy_payment
+  if not (payment and payment.payout) then return false, "RLS payment module missing" end
+  local metadata = tryRequire("overhaul/lib/finance/metadata")
+  if metadata then spec = metadata.tagPayout(spec, category, { vehicleRole = "player" }) end
+  return payment.payout(spec)
+end
+
+local function chargeFine(job, reason)
+  local fine = pricing.custodyFine(job.tierMultiplier, economy("repo"))
+  local ok, problem = payout({
+    amount = -fine,
+    label = string.format("Tow & Repo Hub fine: %s (%s)", reason, vehicleLabel(job)),
+    tags = { "towRepoHub", "fine" },
+    allowNetDebit = true,
+  }, "fine")
+  if not ok then log("W", LOG_TAG, "fine refused: " .. tostring(problem)) end
+  return fine
+end
+
+-- Ends the job when the target is gone; a fine applies only after custody.
+local function failJob(job, reason)
+  local message
+  if jobRules.endsWithFine(job) then
+    local fine = chargeFine(job, reason)
+    message = string.format("The %s was %s. Fine: $%d.", vehicleLabel(job), reason, fine)
+  else
+    message = string.format("The %s was %s before you took it. The job ended without a fine.", vehicleLabel(job), reason)
+  end
+  log("I", LOG_TAG, "job failed: " .. message)
+  ui_message(message, 8, LOG_TAG, "warning")
+  endJob(job)
+end
+
+local function partValueLookup(vehicleId)
+  local data = core_vehicle_manager and core_vehicle_manager.getVehicleData(vehicleId)
+  local vdata = data and data.vdata
+  local activeParts = vdata and vdata.activeParts or {}
+  local partsData = vdata and vdata.activePartsData or {}
+  return function(partPath)
+    local partName = activeParts[partPath]
+    local info = partName and partsData[partName] and partsData[partName].information
+    return info and tonumber(info.value) or nil
+  end, function(partPath)
+    local partName = activeParts[partPath]
+    local info = partName and partsData[partName] and partsData[partName].information
+    return info and info.description or partName or partPath
+  end
+end
+
+local function scaledXp(xp)
+  local rewardData = { [SKILL_ATTRIBUTE] = { amount = xp } }
+  local difficulty = overhaul_career_economy_difficultyMode
+  if difficulty and difficulty.scalePaymentRewardData then
+    pcall(difficulty.scalePaymentRewardData, rewardData, { includeMoney = false })
+  end
+  return rewardData[SKILL_ATTRIBUTE] and tonumber(rewardData[SKILL_ATTRIBUTE].amount) or 0
+end
+
+local function completeJob(job, finalConditions)
+  local valueOf, nameOf = partValueLookup(job.vehicleId)
+  local damageValue, damagedParts = jobRules.damage(job.baseline, finalConditions, valueOf)
+  local paid, penalty = pricing.settle(job.quote, math.floor(damageValue + 0.5))
+  local xp = scaledXp(pricing.xp({
+    tierBaseXp = job.tierBaseXp, loadedKm = job.loadedM / 1000, jobType = job.jobType, payout = paid,
+  }))
+  local label = string.format("Tow & Repo Hub: delivered the %s to %s", vehicleLabel(job), job.destinationName)
+
+  local spec = { amount = paid, label = label, tags = { "gameplay", "reward", "repo", "recovery", "towRepoHub" },
+    fullReward = true }
+  if xp > 0 then spec.xp = { [SKILL_ATTRIBUTE] = xp } end
+  local ok, problem = payout(spec, "activity:repo")
+  if not ok then
+    log("W", LOG_TAG, "payout refused: " .. tostring(problem))
+  elseif recordJob then
+    pcall(recordJob, { name = vehicleLabel(job), money = paid })
+  end
+
+  local parts = {}
+  for _, part in ipairs(damagedParts) do
+    parts[#parts + 1] = { name = nameOf(part.path), lostPercent = math.floor(part.lost * 100 + 0.5),
+      value = math.floor(part.value + 0.5) }
+  end
+  lastCompletion = {
+    vehicle = { brand = job.brand, name = job.name, year = job.year },
+    destinationName = job.destinationName,
+    quote = job.quote, penalty = penalty, paid = paid, xp = xp, parts = parts,
+  }
+  log("I", LOG_TAG, string.format("job delivered: quote %d, penalty %d, paid %d, xp %d", job.quote, penalty, paid, xp))
+  ui_message(string.format("Delivered the %s.\nPaid $%d (quote $%d, damage −$%d), %d Recovery XP.",
+    vehicleLabel(job), paid, job.quote, penalty, xp), 10, LOG_TAG, "info")
+  endJob(job)
+  if overhaul_career_saveSystem and overhaul_career_saveSystem.saveCurrent then
+    pcall(overhaul_career_saveSystem.saveCurrent)
+  end
+end
+
+local function requestPartConditions(vehicle, callback)
+  if not core_vehicleBridge then callback(nil); return end
+  core_vehicleBridge.requestValue(vehicle, function(res) callback(res and res.result) end, "getPartConditions")
+end
+
+local function prepareTargetForPickup(job, vehicle)
+  -- Keep traffic AI off the target, as RLS repo does.
+  if gameplay_traffic and gameplay_traffic.insertTraffic then
+    pcall(function()
+      gameplay_traffic.insertTraffic(job.vehicleId, true)
+      local trafficVehicle = gameplay_traffic.getTrafficData()[job.vehicleId]
+      if trafficVehicle then trafficVehicle:setRole("empty") end
+    end)
+  end
+  vehicle:queueLuaCommand('input.event("parkingbrake", 1, "FILTER_DI", nil, nil, nil, nil)')
+end
+
+local function updateJob()
+  local job = activeJob
+  if not job or job.completing then return end
+  if job.mapId ~= levelId() then return end
+  local vehicle = job.vehicleId and getObjectByID(job.vehicleId)
+  if not vehicle then failJob(job, "lost"); return end
+
+  local targetPos = vehicle:getPosition()
+  local playerPos = playerPosition()
+  if playerPos and jobRules.needsBaseline(job, playerPos:distance(targetPos)) then
+    job.baselineRequested = true
+    prepareTargetForPickup(job, vehicle)
+    requestPartConditions(vehicle, function(conditions)
+      if activeJob ~= job then return end
+      job.baseline = conditions or {}
+      local count = 0
+      for _ in pairs(job.baseline) do count = count + 1 end
+      log("I", LOG_TAG, string.format("baseline captured: %d parts", count))
+    end)
+  end
+
+  if jobRules.reachesCustody(job, targetPos:distance(arrayToVec(job.pickupPos))) then
+    job.custody = true
+    local service = reservationService()
+    if service and job.pickupLive then pcall(service.releaseSpot, job.pickupLive, job.token) end
+    job.pickupLive = nil
+    setRoute(arrayToVec(job.dropPos))
+    showDeliveryMarker(arrayToVec(job.dropPos))
+    ui_message(string.format("You have the %s.\nDeliver it to %s.", vehicleLabel(job), job.destinationName),
+      8, LOG_TAG, "info")
+    log("I", LOG_TAG, "custody started")
+  end
+
+  local speed = vehicle:getVelocity():length()
+  if jobRules.isDelivered(job, targetPos:distance(arrayToVec(job.dropPos)), speed) then
+    job.completing = true
+    requestPartConditions(vehicle, function(conditions)
+      if activeJob ~= job then return end
+      local ok, err = pcall(completeJob, job, conditions or {})
+      if not ok then
+        log("E", LOG_TAG, "completion failed: " .. tostring(err))
+        endJob(job)
+      end
+    end)
+  end
+end
+
+-- Picks a reservable spot, preferring `first`; falls back to the static spot like RLS repo.
+local function reserveSpot(token, first, others)
+  local service = reservationService()
+  if not service then return first, nil end
+  local candidates = { first }
+  for _, spot in ipairs(service.shuffleSpots(others or {})) do
+    if spot ~= first then candidates[#candidates + 1] = spot end
+  end
+  local live = service.findReservableSpot(candidates, token)
+  return live or first, live
+end
+
+local function spawnTarget(job, spot)
+  local vehicle = core_vehicles.spawnNewVehicle(job.modelKey, {
+    config = job.configKey, autoEnterVehicle = false,
+    pos = spot.pos, rot = spot.rot or quat(0, 0, 0, 1), cling = true,
+    electrics = { parkingbrake = 0 },
+  })
+  return vehicle
+end
+
+-- Called by the phone app. Returns {ok, reason}.
+local function acceptOffer(id)
+  if activeJob then return { ok = false, reason = "Finish or cancel your active job first." } end
+  if boardDisabledReason() then return { ok = false, reason = boardDisabledReason() } end
+  local offer = findOffer(id)
+  if not offer or not offer.runtime then return { ok = false, reason = "This offer is no longer available." } end
+
+  local service = reservationService()
+  local token = service and service.makeReservationToken(LOG_TAG) or LOG_TAG
+  local pickupLive = service and service.findReservableSpot({ offer.runtime.spot }, token)
+  if service and not pickupLive then
+    removeOffer(offer.id)
+    return { ok = false, reason = "The vehicle's parking spot is taken. The offer was removed." }
+  end
+  local dropSpot, dropLive = reserveSpot(token, offer.runtime.dropSpot, offer.runtime.dropSpots)
+
+  local vehicle = spawnTarget(offer, pickupLive or offer.runtime.spot)
+  if not vehicle then
+    if service then
+      pcall(service.releaseSpot, pickupLive, token)
+      if dropLive then pcall(service.releaseSpot, dropLive, token) end
+    end
+    removeOffer(offer.id)
+    return { ok = false, reason = "The vehicle could not be spawned. The offer was removed." }
+  end
+
+  removeOffer(offer.id)
+  local state = currentBoard()
+  if state then board.rememberSpot(state.recentSpots, offer.spotKey) end
+
+  local job = {}
+  for key, value in pairs(offer) do
+    if key ~= "runtime" then job[key] = value end
+  end
+  job.mapId = levelId()
+  job.vehicleId = vehicle:getID()
+  job.carrierId = be:getPlayerVehicleID(0)
+  job.token = token
+  job.pickupLive = pickupLive
+  job.dropLive = dropLive
+  job.dropPos = vecToArray(dropSpot.pos)
+  job.custody = false
+  activeJob = job
+  lastCompletion = nil
+
+  local temporary = tryRequire("overhaul/lib/vehicles/temporary")
+  if temporary then
+    disposeTemporary = temporary.declare(LOG_TAG, function()
+      if activeJob then removeTargetVehicle(activeJob) end
+    end)
+  end
+
+  setRoute(arrayToVec(job.pickupPos))
+  ui_message(string.format("Repo job accepted: %s.\nPick it up and deliver it to %s for $%d.",
+    vehicleLabel(job), job.destinationName, job.quote), 8, LOG_TAG, "info")
+  log("I", LOG_TAG, string.format("job accepted: offer %d, vehicle %d", offer.id, job.vehicleId))
+  return { ok = true }
+end
+
+-- Called by the phone app. Before custody cancelling is free; after it, a fine applies.
+local function cancelJob()
+  local job = activeJob
+  if not job then return { ok = false } end
+  local fine = 0
+  if jobRules.endsWithFine(job) then fine = chargeFine(job, "cancelled") end
+  ui_message(fine > 0 and string.format("Job cancelled. Fine: $%d.", fine) or "Job cancelled.", 6, LOG_TAG, "info")
+  log("I", LOG_TAG, "job cancelled, fine " .. fine)
+  endJob(job)
+  return { ok = true, fine = fine }
+end
+
+-- Sets navigation to the active job's next stop.
+local function routeActiveJob()
+  local job = activeJob
+  if not job then return false end
+  return setRoute(arrayToVec(job.custody and job.dropPos or job.pickupPos))
+end
+
+local function clearCompletion()
+  lastCompletion = nil
+  return true
+end
+
+local function activeJobView(job)
+  local vehicle = job.vehicleId and getObjectByID(job.vehicleId)
+  local nextStop = arrayToVec(job.custody and job.dropPos or job.pickupPos)
+  local from = job.custody and vehicle and vehicle:getPosition() or playerPosition()
+  return {
+    jobType = job.jobType,
+    tierLabel = job.tierLabel,
+    vehicle = { brand = job.brand, name = job.name, year = job.year },
+    destinationName = job.destinationName,
+    quote = job.quote,
+    custody = job.custody,
+    phase = job.completing and "completing" or (job.custody and "delivery" or "pickup"),
+    distanceToNextM = from and from:distance(nextStop) or nil,
+    cancelFine = jobRules.endsWithFine(job) and pricing.custodyFine(job.tierMultiplier, economy("repo")) or 0,
+    otherMap = job.mapId ~= levelId(),
+  }
+end
+
 -- Phone app API ----------------------------------------------------------------------------------------
 
--- Distances are the road routes the quote was made from; they stay fixed like the quote.
+-- distanceToVehicleM follows the player (refreshLiveDistance); outboundM and loadedM are the
+-- routes the fixed quote was made from.
 local function offerView(offer)
   return {
     id = offer.id,
@@ -336,7 +746,7 @@ local function offerView(offer)
     tierLabel = offer.tierLabel,
     vehicle = { brand = offer.brand, name = offer.name, year = offer.year },
     weightKg = offer.weightKg,
-    distanceToVehicleM = offer.outboundM,
+    distanceToVehicleM = offer.liveDistanceM or offer.outboundM,
     outboundM = offer.outboundM,
     loadedM = offer.loadedM,
     destinationName = offer.destinationName,
@@ -360,6 +770,8 @@ local function getState()
     skillBonus = pricing.repoSkillBonus(level),
     boardSize = board.config.size,
     offers = {},
+    activeJob = activeJob and activeJobView(activeJob) or nil,
+    lastCompletion = lastCompletion,
   }
   local current = not state.disabledReason and currentBoard() or nil
   if current then
@@ -374,12 +786,7 @@ end
 local function routeToOffer(id)
   local offer = findOffer(id)
   if not offer then return false end
-  if not routeLease then
-    local lease = tryRequire("overhaul/lib/activity/routeLease")
-    routeLease = lease and lease.new(LOG_TAG)
-  end
-  if not routeLease then return false end
-  routeLease.set(arrayToVec(offer.pickupPos), { clearPathOnReachingTarget = true })
+  if not setRoute(arrayToVec(offer.pickupPos)) then return false end
   routedOfferId = offer.id
   ui_message(string.format("Route set to the %s %s (%.1f km).", tostring(offer.brand), tostring(offer.name),
     offer.outboundM / 1000), 5, LOG_TAG, "info")
@@ -399,25 +806,57 @@ end
 
 local function onExtensionLoaded()
   readRlsVersion()
+  local logbookFeed = tryRequire("overhaul/lib/progression/logbookFeed")
+  if logbookFeed then
+    recordJob = logbookFeed.register(LOGBOOK_ID,
+      { title = "Tow & Repo Hub job completed", label = "Jobs", icon = "carCoins" }, "towRepoHub/core.lua")
+  end
   log("I", LOG_TAG, "loaded")
+end
+
+local function onExtensionUnloaded()
+  if activeJob then endJob(activeJob) end
 end
 
 local function onUpdate(dtReal, dtSim)
   if not careerActive() then return end
   simMinutes = simMinutes + math.max(tonumber(dtSim) or 0, 0) / 60
-  tickTimer = tickTimer + (tonumber(dtReal) or 0)
+  local dt = tonumber(dtReal) or 0
+  jobTimer = jobTimer + dt
+  if jobTimer >= JOB_TICK_S then
+    jobTimer = 0
+    local ok, err = pcall(updateJob)
+    if not ok then log("E", LOG_TAG, "job update failed: " .. tostring(err)) end
+  end
+  tickTimer = tickTimer + dt
   if tickTimer < TICK_S then return end
   tickTimer = 0
   tickBoard()
 end
 
+local function onVehicleDestroyed(vehicleId)
+  if activeJob and activeJob.vehicleId == vehicleId and not activeJob.completing then
+    activeJob.vehicleId = nil
+    failJob(activeJob, "destroyed")
+  end
+end
+
+-- Map travel and level unload remove the target. Until persistence (spec step 6) the job ends
+-- here without a fine.
 local function onClientEndMission()
+  if activeJob then
+    log("I", LOG_TAG, "level unloaded with an active job; ending it without a fine")
+    activeJob.vehicleId = nil
+    endJob(activeJob)
+  end
   mapCache = {}
   routeCache = {}
 end
 
 local function onOverhaulActive(active)
   if not active then
+    if activeJob then endJob(activeJob) end
+    lastCompletion = nil
     boards = {}
     mapCache = {}
     routeCache = {}
@@ -426,7 +865,13 @@ end
 
 M.getState = getState
 M.routeToOffer = routeToOffer
+M.acceptOffer = acceptOffer
+M.cancelJob = cancelJob
+M.routeActiveJob = routeActiveJob
+M.clearCompletion = clearCompletion
 M.resetBoard = resetBoard
+M.onExtensionUnloaded = onExtensionUnloaded
+M.onVehicleDestroyed = onVehicleDestroyed
 M.onExtensionLoaded = onExtensionLoaded
 M.onUpdate = onUpdate
 M.onClientEndMission = onClientEndMission
