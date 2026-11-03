@@ -1,18 +1,21 @@
 # Tow & Repo Hub
 
 An add-on for [RLS Career Overhaul](https://github.com/RLS-Modding/rls_career_overhaul)
-in BeamNG.drive that replaces "generate, look, cancel, repeat" repo work with a job board.
+in BeamNG.drive that adds towing work and replaces "generate, look, cancel, repeat"
+repo work with a job board.
 
 > **Status:** in development. Nothing is playable yet. See [docs/spec.md](docs/spec.md).
 
 ## What it does
 
-- A new **Tow & Repo Hub** phone app shows several repossession offers at once.
-- Every offer shows the pickup distance, tier, vehicle, drop-off, road route length
-  and a **quoted payout up front**.
+- A new **Tow & Repo Hub** phone app shows six offers at once.
+- **Tow jobs:** a broken-down car (low fuel, flat tyre, overheating) goes home to a
+  garage or to a dealership service.
+- **Repo jobs:** a repossessed car goes back to the dealership that sold it.
+- Every offer shows the tier, vehicle, weight, distance to the car, route length,
+  destination and a **quoted payout up front**.
 - Offers can be sorted and filtered, so you pick the job you want instead of rerolling.
-- Payout follows the real road route, tuned to sit just below Off-Road Recovery.
-- Targets spawn only where a tow truck can load them comfortably (parking lots, roadside).
+- Short and long jobs pay about the same per minute, a step below Off-Road Recovery.
 - Completed jobs pay the quote and give XP to the RLS **Recovery** skill.
 
 ## Requirements
