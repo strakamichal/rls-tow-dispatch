@@ -38,7 +38,8 @@
             <strong class="quote">{{ money(job.quote) }}</strong>
           </div>
           <dl>
-            <div><dt>Destination</dt><dd>{{ job.destinationName }}</dd></div>
+            <div><dt>{{ destinationLabel(job) }}</dt><dd>{{ job.destinationName }}</dd></div>
+            <div v-if="job.faultLabel"><dt>Fault</dt><dd>{{ job.faultLabel }}</dd></div>
             <div><dt>{{ job.custody ? 'To destination' : 'To vehicle' }}</dt><dd>{{ distance(job.distanceToNextM) }}</dd></div>
           </dl>
           <p v-if="job.otherMap" class="hint">This job is on another map.</p>
@@ -98,8 +99,9 @@
           <dl>
             <div><dt>To vehicle</dt><dd>{{ distance(offer.distanceToVehicleM) }}</dd></div>
             <div><dt>Route loaded</dt><dd>{{ distance(offer.loadedM) }}</dd></div>
-            <div><dt>Destination</dt><dd>{{ offer.destinationName }}</dd></div>
+            <div><dt>{{ destinationLabel(offer) }}</dt><dd>{{ offer.destinationName }}</dd></div>
             <div><dt>Weight</dt><dd>{{ weight(offer.weightKg) }}</dd></div>
+            <div v-if="offer.faultLabel" class="wide"><dt>Fault</dt><dd>{{ offer.faultLabel }}</dd></div>
             <div><dt>Expires</dt><dd>{{ duration(offer.expiresInS) }}</dd></div>
           </dl>
           <div class="actions">
@@ -191,6 +193,7 @@ const distanceOptions = [
 const offers = computed(() => Array.isArray(state.value?.offers) ? state.value.offers : [])
 const job = computed(() => state.value?.activeJob || null)
 const completion = computed(() => state.value?.lastCompletion || null)
+const destinationLabel = item => ({ home: 'Home', service: 'Service' })[item.destinationKind] || 'Destination'
 const phaseLabel = j => ({ pickup: 'Pick up the vehicle', delivery: 'Deliver', completing: 'Completing' })[j.phase] || ''
 
 const tierOptions = computed(() => {
@@ -398,6 +401,7 @@ dl {
   div { display: flex; justify-content: space-between; gap: 6px; font-size: .8em; }
   dt { opacity: .6; }
   dd { margin: 0; text-align: right; }
+  .wide { grid-column: 1 / -1; }
 }
 .actions { display: flex; justify-content: flex-end; gap: 6px; }
 .actions button {
