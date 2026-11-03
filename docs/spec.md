@@ -1,6 +1,6 @@
 # Tow Dispatch (formerly Tow & Repo Hub) — specification
 
-Status: **draft, awaiting approval**.
+Status: **implemented** (delivery steps 1–6), playable beta, not released yet.
 Targets: BeamNG.drive 0.40, RLS Career Overhaul 2.8.0.
 
 ## Problem

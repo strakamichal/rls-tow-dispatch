@@ -5,8 +5,7 @@ BeamNG.drive that adds towing work: broken-down cars that need to go home or to 
 on a job board with the payout quoted up front, so you pick the job you want instead of
 generating, cancelling and trying again.
 
-> **Status:** playable beta, not released yet. Tested on The Gap with RLS 2.8.0. Saving an
-> active job across a game reload is not done yet (see [Known limitations](#known-limitations)).
+> **Status:** playable beta, not released yet. Tested on The Gap with RLS 2.8.0.
 
 ## Features
 
@@ -24,7 +23,8 @@ generating, cancelling and trying again.
   - **Overheating** – empty radiator, the engine overheats as soon as it runs,
   - **Failing engine** – misfires and stalls.
 
-  You can load it on a truck or trailer, or drive it yourself if it still runs.
+  Tow it on a truck or trailer. If it still runs, driving it a short way to get it loaded is
+  fine; driving it further yourself cuts the pay and gives no XP.
 - **Quote up front:** every offer shows the payout, the fault, the distance to the vehicle,
   the route with the vehicle, its weight, the destination and when the offer expires. Sort
   by payout or distance and filter by tier and distance.
@@ -53,7 +53,8 @@ RLS and keep it zipped. Start or load an RLS career and open **Tow Dispatch** on
 
 1. Open the app and pick an offer. Tap **?** in the app for a short guide.
 2. **Accept** it and drive to the vehicle; the app's **Navigate** button sets the route.
-3. Load the vehicle, or drive it if it runs. Once it leaves its spot, it is yours.
+3. Load the vehicle; driving it a short way onto the truck is fine. Once it leaves its spot,
+   it is yours.
 4. Take it to the green marker at the destination and stop. You are paid the quote minus any
    damage penalty and get Recovery XP.
 
@@ -61,8 +62,9 @@ One job at a time.
 
 ## Known limitations
 
-- **No saving yet:** the board and an active job are lost when you reload the game, reload
-  Lua or travel to another map (an active job then ends without a fine).
+- **Saving:** the board and an active job are saved with the RLS career, including a vehicle
+  loaded on a flatbed. A job started on one map waits there while you travel; a vehicle on a
+  flatbed does not travel with you.
 - Tested on The Gap only so far; other RLS maps should work but are not verified.
 - Heavy vehicles (Recovery level 25+) are not tested yet.
 - The app has developer tools at the bottom (**Debug tools**) that will be removed or hidden

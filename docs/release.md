@@ -61,7 +61,7 @@ The upload is done by the author in the browser (it needs their beamng.com accou
 - **Short description** (one line): Tow jobs for the RLS career phone: pick up broken-down cars
   and tow them home or to a service.
 - **Description:** what it is; requires RLS Career Overhaul 2.8.x and BeamNG 0.40; how to play
-  (open Tow Dispatch on the phone, accept, tow it, do not drive it yourself, deliver); tiers
+  (open Tow Dispatch on the phone, accept, tow it rather than drive it, since driving it yourself cuts the pay, deliver); tiers
   unlocked with the Recovery skill; faults; saving; known limits; link to GitHub for issues.
 - **Images:** 1–4 in-game screenshots at 16:9 in daylight: the board on the phone, a car on a
   flatbed, the active job card, the delivery payout. The first one becomes the thumbnail, and
