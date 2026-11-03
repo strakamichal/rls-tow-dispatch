@@ -109,9 +109,11 @@ quote = (callout + outboundRate × km to vehicle + loadedRate × km loaded)
 - Job type factor: Tow 1.1, Repo 1.0.
 - Economy multiplier: the RLS `repo` economy section.
 - No speed or time component; the quote is fixed when the offer is created.
-- **Cap:** the quote never exceeds 90 % of the Off-Road Recovery quote for the same
-  distances, skill level and economy, including the recovery difficulty fee available
-  at that level (0 below level 10, 1 500 from 10, 3 000 from 30). Recovery reference
+- Skill level is the RLS Recovery skill (`careerSkills-recovery`), which RLS repo and
+  Off-Road Recovery share.
+- **Cap:** the quote never exceeds 90 % of what Off-Road Recovery pays for the same
+  distances and skill level, using the recovery economy section (`offroadRecovery`),
+  including the recovery difficulty fee available at that level (0 below level 10, 1 500 from 10, 3 000 from 30). Recovery reference
   (RLS 2.8 `jobs/recovery/rewards.lua`):
   `(1500 + 100/km outbound + 250/km loaded + fee) × (1 + 2p²)`, `p = floor((level − 5) / 2) / 22`.
 
@@ -131,8 +133,10 @@ xp = RLS repo xp for the tier × (3 + km loaded) / 5 × job type factor
 
 RLS repo xp is `(5 + tier baseXp + round(km / 2)) × 2`. A 2 km job gives what RLS
 repo gives today; longer jobs give proportionally more, the same per minute.
-XP never exceeds 90 % of the comparable Off-Road Recovery XP (to confirm with the
-recovery site data). Damage does not reduce XP, but a delivery paid zero because of
+**Open:** the spec also asked that XP never exceed 90 % of comparable Off-Road Recovery
+XP. Recovery XP is `(5 + site baseXp + round(km / 2)) × 4` and barely grows with distance,
+so with equal base XP a hub job passes 90 % of it from about 6 km loaded. The two goals
+conflict; to decide once the recovery site base XP on The Gap is known. Damage does not reduce XP, but a delivery paid zero because of
 damage gives no XP.
 
 ### Completion
