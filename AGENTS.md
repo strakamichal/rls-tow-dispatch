@@ -16,9 +16,13 @@ Specification: [docs/spec.md](docs/spec.md).
 
 The repo root is the mod root; the packaged zip mirrors it.
 
-- `lua/ge/extensions/towRepoHub/` — game engine Lua (offers, pricing, job flow)
-- `gameplay/overhaul/phone/apps/tow-repo-hub.json` — RLS phone app definition
-- `ui/ui-vue/mods/tow_repo_hub/` — phone app UI (Vue)
+- `lua/ge/extensions/towRepoHub/` — game engine Lua (offers, pricing, job flow);
+  `core.lua` is the `towRepoHub_core` extension
+- `scripts/towRepoHub/modScript.lua` — loads `towRepoHub_core` when the mod is active
+- `gameplay/overhaul/phone/apps/towRepoHub.json` — RLS phone app definition (the `id` must equal
+  the file name); it uses a top-level `component`, so RLS hosts it at `/overhaul/phone-app/towRepoHub`
+  and passes `callLua` as a prop
+- `ui/ui-vue/mods/towRepoHub/` — phone app UI (Vue)
 - `tests/` — Lua tests for pure logic, run outside the game
 - `tools/` — packaging and dev scripts
 - `docs/` — specification and notes

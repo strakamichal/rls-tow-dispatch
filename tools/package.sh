@@ -4,7 +4,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-MOD_DIRS=(lua gameplay ui)
+MOD_DIRS=(lua scripts gameplay ui)
 OUT=dist/tow_repo_hub.zip
 
 present=()

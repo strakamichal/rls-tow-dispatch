@@ -15,7 +15,7 @@ param(
 $ErrorActionPreference = "Stop"
 $Repo = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $ModName = "tow_repo_hub"
-$ModDirs = @("lua", "gameplay", "ui")
+$ModDirs = @("lua", "scripts", "gameplay", "ui")
 
 function Find-UserFolder {
   $candidates = @(

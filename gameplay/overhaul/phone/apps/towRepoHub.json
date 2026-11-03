@@ -1,0 +1,13 @@
+{
+  "id": "towRepoHub",
+  "name": "Tow & Repo Hub",
+  "icon": "tow",
+  "component": "/ui/ui-vue/mods/towRepoHub/PhoneTowRepoHub.vue",
+  "color": "#2f5d8a",
+  "iconColor": "#ffffff",
+  "category": "Jobs",
+  "storeTagline": "Towing and repo job board",
+  "storeDescription": "Pick towing and repossession jobs from a board of offers with the payout quoted up front.",
+  "defaultPage": 0,
+  "defaultPosition": 6
+}
