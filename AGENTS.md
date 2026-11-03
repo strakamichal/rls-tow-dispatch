@@ -33,6 +33,7 @@ The repo root is the mod root; the packaged zip mirrors it.
 
 ## Build and run
 
+- Tests: `tools/test.sh` (needs LuaJIT: `brew install luajit` / `scoop install luajit`)
 - Package: `tools/package.sh` → `dist/tow_repo_hub.zip`
 - Install: copy the zip into the BeamNG user folder `mods/` (keep it zipped),
   enable it in Mods → Manager, restart the game.
