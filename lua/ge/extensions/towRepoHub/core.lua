@@ -197,27 +197,52 @@ end
 
 -- Offer generation -----------------------------------------------------------------------------------
 
+-- DEBUG, temporary: short jobs for testing. Pickups within DEBUG_MAX_PICKUP_M of the player, the
+-- nearest destination and lower minimums. Toggled from the phone app.
+local debugShortJobs = false
+local DEBUG_MAX_PICKUP_M = 1500
+local DEBUG_MIN_PICKUP_FROM_PLAYER_M = 50
+local DEBUG_MIN_LOADED_ROUTE_M = 100
+
 local function pickPickupSpot(state, fromPos, destPos)
   local spots = cityParkingSpots()
+  local minFromPlayer = debugShortJobs and DEBUG_MIN_PICKUP_FROM_PLAYER_M or MIN_PICKUP_FROM_PLAYER_M
+  local minLoaded = debugShortJobs and DEBUG_MIN_LOADED_ROUTE_M or MIN_LOADED_ROUTE_M
+  if debugShortJobs then
+    local near = {}
+    for _, spot in ipairs(spots) do
+      if spot.pos:distance(fromPos) <= DEBUG_MAX_PICKUP_M then near[#near + 1] = spot end
+    end
+    spots = near
+  end
   local routeTries = 0
   for _ = 1, MAX_SPOT_TRIES do
     if #spots == 0 then return nil end
     local spot = spots[math.random(#spots)]
     local key = spotKey(spot)
-    if not board.isSpotTaken(state, key) and spot.pos:distance(fromPos) >= MIN_PICKUP_FROM_PLAYER_M then
+    if not board.isSpotTaken(state, key) and spot.pos:distance(fromPos) >= minFromPlayer then
       routeTries = routeTries + 1
       local loaded = routeDistance(spot.pos, destPos)
-      if loaded >= MIN_LOADED_ROUTE_M and spotIsFree(spot) then return spot, loaded end
+      if loaded >= minLoaded and spotIsFree(spot) then return spot, loaded end
       if routeTries >= MAX_ROUTE_TRIES then return nil end
     end
   end
   return nil
 end
 
+local function nearestEntry(entries, fromPos)
+  local best, bestDistance
+  for _, entry in ipairs(entries) do
+    local distance = entry.dropSpots[1].pos:distance(fromPos)
+    if not bestDistance or distance < bestDistance then best, bestDistance = entry, distance end
+  end
+  return best
+end
+
 local function generateRepoOffer(state, level, fromPos)
   local byDealership = repoCandidatesByDealership(level)
   if #byDealership == 0 then return nil end
-  local entry = byDealership[math.random(#byDealership)]
+  local entry = debugShortJobs and nearestEntry(byDealership, fromPos) or byDealership[math.random(#byDealership)]
   local pool = getRepoPool()
 
   local info = pool.pickWeightedRepoVehicleInfo(entry.candidates)
@@ -494,10 +519,6 @@ local function partValueLookup(vehicleId)
     local partName = activeParts[partPath]
     local info = partName and partsData[partName] and partsData[partName].information
     return info and tonumber(info.value) or nil
-  end, function(partPath)
-    local partName = activeParts[partPath]
-    local info = partName and partsData[partName] and partsData[partName].information
-    return info and info.description or partName or partPath
   end
 end
 
@@ -511,12 +532,9 @@ local function scaledXp(xp)
 end
 
 local function completeJob(job, finalConditions)
-  local valueOf, nameOf = partValueLookup(job.vehicleId)
-  local damageValue, damagedParts = jobRules.damage(job.baseline, finalConditions, valueOf)
-  local paid, penalty = pricing.settle(job.quote, math.floor(damageValue + 0.5))
-  local xp = scaledXp(pricing.xp({
-    tierBaseXp = job.tierBaseXp, loadedKm = job.loadedM / 1000, jobType = job.jobType, payout = paid,
-  }))
+  local damageValue = jobRules.damage(job.baseline, finalConditions, partValueLookup(job.vehicleId))
+  local paid, penalty = pricing.settle(job.quote, damageValue)
+  local xp = scaledXp(pricing.xp({ tierBaseXp = job.tierBaseXp, loadedKm = job.loadedM / 1000, jobType = job.jobType }))
   local label = string.format("Tow & Repo Hub: delivered the %s to %s", vehicleLabel(job), job.destinationName)
 
   local spec = { amount = paid, label = label, tags = { "gameplay", "reward", "repo", "recovery", "towRepoHub" },
@@ -529,17 +547,13 @@ local function completeJob(job, finalConditions)
     pcall(recordJob, { name = vehicleLabel(job), money = paid })
   end
 
-  local parts = {}
-  for _, part in ipairs(damagedParts) do
-    parts[#parts + 1] = { name = nameOf(part.path), lostPercent = math.floor(part.lost * 100 + 0.5),
-      value = math.floor(part.value + 0.5) }
-  end
   lastCompletion = {
     vehicle = { brand = job.brand, name = job.name, year = job.year },
     destinationName = job.destinationName,
-    quote = job.quote, penalty = penalty, paid = paid, xp = xp, parts = parts,
+    quote = job.quote, penalty = penalty, paid = paid, xp = xp,
   }
-  log("I", LOG_TAG, string.format("job delivered: quote %d, penalty %d, paid %d, xp %d", job.quote, penalty, paid, xp))
+  log("I", LOG_TAG, string.format("job delivered: quote %d, damage %.0f, penalty %d, paid %d, xp %d",
+    job.quote, damageValue, penalty, paid, xp))
   ui_message(string.format("Delivered the %s.\nPaid $%d (quote $%d, damage −$%d), %d Recovery XP.",
     vehicleLabel(job), paid, job.quote, penalty, xp), 10, LOG_TAG, "info")
   endJob(job)
@@ -577,9 +591,11 @@ local function updateJob()
   if playerPos and jobRules.needsBaseline(job, playerPos:distance(targetPos)) then
     job.baselineRequested = true
     prepareTargetForPickup(job, vehicle)
+    log("I", LOG_TAG, string.format("baseline requested at %.0f m", playerPos:distance(targetPos)))
     requestPartConditions(vehicle, function(conditions)
       if activeJob ~= job then return end
-      job.baseline = conditions or {}
+      if type(conditions) ~= "table" then log("W", LOG_TAG, "baseline: vehicle returned no part conditions") end
+      job.baseline = type(conditions) == "table" and conditions or {}
       local count = 0
       for _ in pairs(job.baseline) do count = count + 1 end
       log("I", LOG_TAG, string.format("baseline captured: %d parts", count))
@@ -630,6 +646,10 @@ local function spawnTarget(job, spot)
     pos = spot.pos, rot = spot.rot or quat(0, 0, 0, 1), cling = true,
     electrics = { parkingbrake = 0 },
   })
+  -- A fresh spawn has no part conditions; without them the baseline request returns nothing.
+  if vehicle and core_vehicleBridge then
+    pcall(core_vehicleBridge.executeAction, vehicle, "ensurePartConditionsInit", tonumber(job.mileage) or 0, 1, 1)
+  end
   return vehicle
 end
 
@@ -772,6 +792,7 @@ local function getState()
     offers = {},
     activeJob = activeJob and activeJobView(activeJob) or nil,
     lastCompletion = lastCompletion,
+    debugShortJobs = debugShortJobs,
   }
   local current = not state.disabledReason and currentBoard() or nil
   if current then
@@ -800,6 +821,25 @@ local function resetBoard()
   routeCache = {}
   mapCache = {}
   log("I", LOG_TAG, "board reset")
+end
+
+-- Replaces every offer on the current board; recently used spots stay excluded.
+local function refreshOffers()
+  local state = currentBoard()
+  if not state then return false end
+  state.offers = {}
+  state.filling = true
+  routedOfferId = nil
+  log("I", LOG_TAG, "offers refreshed")
+  return true
+end
+
+-- DEBUG, temporary: see debugShortJobs.
+local function setDebugShortJobs(enabled)
+  debugShortJobs = enabled == true
+  log("I", LOG_TAG, "debug short jobs " .. (debugShortJobs and "on" or "off"))
+  refreshOffers()
+  return debugShortJobs
 end
 
 -- Hooks ----------------------------------------------------------------------------------------------
@@ -870,6 +910,8 @@ M.cancelJob = cancelJob
 M.routeActiveJob = routeActiveJob
 M.clearCompletion = clearCompletion
 M.resetBoard = resetBoard
+M.refreshOffers = refreshOffers
+M.setDebugShortJobs = setDebugShortJobs
 M.onExtensionUnloaded = onExtensionUnloaded
 M.onVehicleDestroyed = onVehicleDestroyed
 M.onExtensionLoaded = onExtensionLoaded

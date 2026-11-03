@@ -124,7 +124,8 @@ quote = (callout + outboundRate × km to vehicle + loadedRate × km loaded)
   the vehicle, not at spawn, so traffic damage before arrival is not charged.
 - Penalty = value of part integrity lost during the job, as RLS Off-Road Recovery
   computes it. Losses below ~2 % per part are ignored.
-- The penalty is capped at the quote: a delivery never pays below zero.
+- The penalty is capped at 50 % of the quote, as in RLS Off-Road Recovery: a delivery
+  always pays at least half the quote.
 
 ### XP
 
@@ -137,14 +138,13 @@ repo gives today; longer jobs give proportionally more, the same per minute.
 **Open:** the spec also asked that XP never exceed 90 % of comparable Off-Road Recovery
 XP. Recovery XP is `(5 + site baseXp + round(km / 2)) × 4` and barely grows with distance,
 so with equal base XP a hub job passes 90 % of it from about 6 km loaded. The two goals
-conflict; to decide once the recovery site base XP on The Gap is known. Damage does not reduce XP, but a delivery paid zero because of
-damage gives no XP.
+conflict; to decide once the recovery site base XP on The Gap is known. Damage never reduces XP.
 
 ### Completion
 
 The job completes when the vehicle is within ~5 m of the destination spot and stopped,
 loaded on the truck or not (as RLS does). The player sees a breakdown: quote, damage
-penalty with the most damaged parts, payout and XP. Payouts are tagged so RLS Wallet
+penalty, payout and XP. Payouts are tagged so RLS Wallet
 lists them under repo/recovery with an extra hub tag, and the job is written to the
 RLS logbook.
 

@@ -72,6 +72,13 @@
           </div>
         </section>
 
+        <div class="tools">
+          <button type="button" class="chip" @click="refreshOffers">Refresh offers</button>
+          <!-- DEBUG, temporary -->
+          <button type="button" class="chip debug" :class="{ active: state.debugShortJobs }"
+            @click="toggleShortJobs">Short jobs (debug)</button>
+        </div>
+
         <div class="section-heading">
           <h2>Offers</h2>
           <span>{{ visibleOffers.length }}/{{ state.offers.length }} shown · {{ state.offers.length }}/{{ state.boardSize }}</span>
@@ -135,9 +142,6 @@
           <li><span>Quote</span><span>{{ money(completion.quote) }}</span></li>
           <li v-if="completion.penalty > 0" class="penalty">
             <span>Damage penalty</span><span>−{{ money(completion.penalty) }}</span>
-          </li>
-          <li v-for="part in completion.parts" :key="part.name" class="part">
-            <span>{{ part.name }} ({{ part.lostPercent }}%)</span><span>{{ money(part.value) }}</span>
           </li>
           <li class="total"><span>Paid</span><span>{{ money(completion.paid) }}</span></li>
           <li><span>Recovery XP</span><span>+{{ completion.xp }}</span></li>
@@ -254,6 +258,17 @@ async function cancelJob() {
   refresh()
 }
 
+async function refreshOffers() {
+  if (props.callLua) await props.callLua('towRepoHub_core.refreshOffers')
+  refresh()
+}
+
+// DEBUG, temporary
+async function toggleShortJobs() {
+  if (props.callLua) await props.callLua('towRepoHub_core.setDebugShortJobs', !state.value?.debugShortJobs)
+  refresh()
+}
+
 async function routeJob() {
   if (props.callLua) await props.callLua('towRepoHub_core.routeActiveJob')
 }
@@ -337,6 +352,13 @@ onUnmounted(stop)
   font-size: .8em;
   cursor: pointer;
   &.active { background: #3d7cc0; border-color: #3d7cc0; }
+}
+.tools {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-bottom: 8px;
+  .debug.active { background: #b0601e; border-color: #b0601e; }
 }
 .section-heading {
   display: flex;
@@ -433,7 +455,6 @@ dl {
   font-size: .9em;
   li { display: flex; justify-content: space-between; padding: 3px 0; }
   .penalty { color: #e08a8a; }
-  .part { padding-left: 10px; font-size: .85em; opacity: .7; }
   .total { border-top: 1px solid rgba(255, 255, 255, .2); margin-top: 4px; padding-top: 6px; font-weight: 600; color: #8fd18b; }
 }
 .empty {

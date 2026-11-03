@@ -9,6 +9,7 @@ M.config = {
   loadedPerKm = 135,
   jobTypeFactor = { tow = 1.1, repo = 1.0 },
   recoveryCapShare = 0.9,
+  maxPenaltyShare = 0.5,
   fineBase = 1000,
 }
 
@@ -131,20 +132,19 @@ function M.rlsRepoXp(tierBaseXp, loadedKm)
   return (5 + math.max(0, finite(tierBaseXp, 0)) + round(distanceKm(loadedKm) / 2)) * 2
 end
 
--- args: tierBaseXp, loadedKm, jobType, payout
+-- args: tierBaseXp, loadedKm, jobType
 -- A 2 km job gives what RLS repo gives; longer jobs scale so XP per minute stays even.
--- A delivery paid zero because of damage gives no XP.
+-- Damage never reduces XP.
 function M.xp(args)
-  if finite(args.payout, 0) <= 0 then return 0 end
   local loadedKm = distanceKm(args.loadedKm)
   local xp = M.rlsRepoXp(args.tierBaseXp, loadedKm) * (3 + loadedKm) / 5 * jobTypeFactor(args.jobType)
   return round(xp)
 end
 
--- The damage penalty never takes a delivery below zero.
+-- The damage penalty takes at most maxPenaltyShare of the quote, as RLS Off-Road Recovery does.
 function M.settle(quote, damagePenalty)
   quote = math.max(0, finite(quote, 0))
-  local penalty = clamp(finite(damagePenalty, 0), 0, quote)
+  local penalty = round(clamp(finite(damagePenalty, 0), 0, quote * M.config.maxPenaltyShare))
   return quote - penalty, penalty
 end
 

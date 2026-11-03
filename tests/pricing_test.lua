@@ -120,22 +120,18 @@ return function(t)
 
     { "xp matches RLS repo for a 2 km job and scales with distance", function()
       -- RLS repo: (5 + 500 + round(2/2)) * 2 = 1012
-      t.eq(pricing.xp({ tierBaseXp = 500, loadedKm = 2, jobType = "repo", payout = 100 }), 1012, "2 km")
+      t.eq(pricing.xp({ tierBaseXp = 500, loadedKm = 2, jobType = "repo" }), 1012, "2 km")
       -- (5 + 500 + 4) * 2 = 1018; * (3 + 8) / 5 = 2239.6
-      t.eq(pricing.xp({ tierBaseXp = 500, loadedKm = 8, jobType = "repo", payout = 100 }), 2240, "8 km")
-      t.eq(pricing.xp({ tierBaseXp = 500, loadedKm = 2, jobType = "tow", payout = 100 }), 1113, "tow is 1.1x")
+      t.eq(pricing.xp({ tierBaseXp = 500, loadedKm = 8, jobType = "repo" }), 2240, "8 km")
+      t.eq(pricing.xp({ tierBaseXp = 500, loadedKm = 2, jobType = "tow" }), 1113, "tow is 1.1x")
     end },
 
-    { "no xp when damage took the whole payout", function()
-      t.eq(pricing.xp({ tierBaseXp = 500, loadedKm = 5, jobType = "repo", payout = 0 }), 0, "zero payout")
-      t.eq(pricing.xp({ tierBaseXp = 500, loadedKm = 5, jobType = "repo", payout = NAN }), 0, "NaN payout")
-    end },
-
-    { "settlement caps the damage penalty at the quote", function()
+    { "settlement caps the damage penalty at half the quote", function()
       t.eq(pricing.settle(1000, 300), 700, "partial penalty")
       local payout, penalty = pricing.settle(1000, 5000)
-      t.eq(payout, 0, "never below zero")
-      t.eq(penalty, 1000, "penalty capped")
+      t.eq(payout, 500, "half the quote stays")
+      t.eq(penalty, 500, "penalty capped")
+      t.eq(select(2, pricing.settle(495, 5000)), 248, "rounded")
       t.eq(pricing.settle(1000, -50), 1000, "negative penalty ignored")
       t.eq(pricing.settle(1000, NAN), 1000, "NaN penalty ignored")
       t.eq(pricing.settle(-500, 100), 0, "negative quote pays nothing")
