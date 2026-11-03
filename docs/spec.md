@@ -97,9 +97,12 @@ The tier definitions are read at runtime from RLS `gameplay/overhaul/repo/repoVe
   vehicles itself with the same rules (`lib/repoTiers.lua`).
 - Tow: classified by vehicle value only (no brand or config-type restriction), using the
   RLS value bands: Low Value < 25 000, Budget 25–50 k, Standard 50–100 k,
-  Luxury 100–200 k, Exotic > 200 k. **Heavy** = weight > 3.5 t or type Truck/Bus.
-  Overlapping bands resolve to the higher tier. Vehicles with implausible values
-  (for example from other mods) are skipped.
+  Luxury 100–200 k, Exotic > 200 k. **Heavy** = weight > 3.5 t or a medium-duty truck
+  model (MD-Series); the game types pickups and SUVs as Truck, so the type alone does not
+  count. Overlapping bands resolve to the higher tier. Vehicles with implausible values
+  (for example from other mods) are skipped, and so is anything a tow truck or car trailer
+  cannot carry or that cannot be a broken-down car: buses, semi tractors, vehicles over 9 t
+  and configurations without an engine (rolling chassis).
 
 ### Tow faults
 
@@ -209,11 +212,17 @@ RLS logbook.
 
 ### Persistence
 
-- Saved in the career save slot together with RLS: per-map boards with expiry times,
-  the active job (phase, quote, baseline, custody) and recently used spots.
-- The active target is held as a temporary vehicle in the RLS inventory that takes no
-  garage space (as RLS Off-Road Recovery does), so RLS restores it after loading,
-  including on a flatbed. If restoring fails, the job ends with no fine and a message.
+- Saved in the career save slot together with RLS (`career/towRepoHub/state.json`):
+  per-map boards with expiry times, recently used spots, the hub clock and the active
+  job (phase, quote, baseline, custody, driven distance, fault).
+- The target is not an RLS inventory vehicle; the hub respawns it itself (as RLS
+  Off-Road Recovery does) from its last pose, part conditions and fuel. When it rested
+  on one of the player's vehicles (flatbed, trailer), the save also holds that carrier's
+  inventory id and the RLS `carriedFrame` relation, and the target is placed back on
+  the carrier once RLS has restored it (waiting up to 20 s). If restoring fails, the job
+  ends with no fine and a message.
+- A Lua reload (Ctrl+L) keeps the state in a session file for the same profile.
+- Map travel pauses the job; the target comes back when the player returns to its map.
 
 ### RLS integration
 

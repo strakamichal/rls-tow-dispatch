@@ -42,7 +42,9 @@ The repo root is the mod root; the packaged zip mirrors it.
 - RLS source for reference: `tools/fetch-rls.sh` → `.cache/rls` (source files only,
   not committed). Search there instead of the GitHub API. Integration notes:
   [docs/rls-integration.md](docs/rls-integration.md).
-- Package: `tools/package.sh` → `dist/tow_repo_hub.zip`
+- Package: `tools/package.sh` → `dist/tow_repo_hub.zip`. Releases ship without the phone app's
+  debug tools: set `debugTools = false` in `lua/ge/extensions/towRepoHub/lib/build.lua` first;
+  the script refuses to package while it is on (`--debug` packages a test build anyway).
 
 On the Windows gaming PC (PowerShell; scripts not yet verified on a real install):
 

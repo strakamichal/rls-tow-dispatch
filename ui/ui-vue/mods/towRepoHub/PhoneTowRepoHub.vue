@@ -75,12 +75,12 @@
             <li :class="{ done: job.custody, current: !job.custody }">
               <svg viewBox="0 0 24 24"><path :d="icons.pin" /></svg>
               <span>Pick up the vehicle</span>
-              <b v-if="!job.custody">{{ distance(job.distanceToNextM) }}</b>
+              <b v-if="!job.custody && job.distanceToNextM != null">{{ distance(job.distanceToNextM) }}</b>
             </li>
             <li :class="{ current: job.custody }" :title="destinationTitle(job)">
               <svg viewBox="0 0 24 24"><path :d="destinationIcon(job)" /></svg>
               <span>{{ job.custody ? 'Deliver to' : 'Then to' }} {{ job.destinationName }}</span>
-              <b>{{ distance(job.custody ? job.distanceToNextM : job.loadedM) }}</b>
+              <b v-if="!job.custody || job.distanceToNextM != null">{{ distance(job.custody ? job.distanceToNextM : job.loadedM) }}</b>
             </li>
           </ol>
 
@@ -108,13 +108,13 @@
           </div>
           <p v-else-if="job.jobType === 'repo'" class="job-note">The owner missed payments. Take the car back to the dealership.</p>
 
-          <p v-if="job.otherMap" class="hint">This job is on another map.</p>
+          <p v-if="job.otherMap" class="hint">This job waits in {{ job.mapLabel }}. It continues when you travel back.</p>
           <div class="actions">
             <button v-if="debugOpen" type="button" class="icon-btn debug" title="Teleport (debug)" @click="teleport()">
               <svg viewBox="0 0 24 24"><path :d="icons.bolt" /></svg>
             </button>
-            <button type="button" class="btn" @click="confirmingCancel = true">Cancel</button>
-            <button type="button" class="btn primary grow" @click="routeJob">
+            <button type="button" class="btn" :class="{ grow: job.otherMap }" @click="confirmingCancel = true">Cancel</button>
+            <button v-if="!job.otherMap" type="button" class="btn primary grow" @click="routeJob">
               <svg viewBox="0 0 24 24"><path :d="icons.navigate" /></svg>Navigate
             </button>
           </div>
@@ -218,31 +218,58 @@
         </template>
       </template>
 
-      <!-- DEBUG, temporary: test tools -->
-      <section v-if="state && !state.disabledReason && state.debugModels" class="debug-panel">
-        <button type="button" class="pill debug" :class="{ active: debugOpen }" @click="debugOpen = !debugOpen">
-          <svg viewBox="0 0 24 24"><path :d="icons.bolt" /></svg>Debug tools
+      <!-- Debug tools (lib/build.lua debugTools); not in release builds. -->
+      <section v-if="state && !state.disabledReason && debug" class="debug-panel" :class="{ open: debugOpen }">
+        <button type="button" class="debug-head" @click="debugOpen = !debugOpen">
+          <svg viewBox="0 0 24 24"><path :d="icons.bolt" /></svg>
+          <span class="debug-title">Debug</span>
+          <span class="debug-info"><span v-for="part in debugSummary" :key="part">{{ part }}</span></span>
+          <span class="debug-chevron">{{ debugOpen ? '▴' : '▾' }}</span>
         </button>
         <template v-if="debugOpen">
-          <div class="debug-row">
-            <button type="button" class="pill" :class="{ active: state.debugShortJobs }" @click="toggleShortJobs">Short jobs</button>
-            <button type="button" class="pill" @click="refreshOffers">
-              <svg viewBox="0 0 24 24"><path :d="icons.refresh" /></svg>New board
-            </button>
+          <div class="debug-section">
+            <small>Board</small>
+            <div class="debug-row">
+              <button type="button" class="pill" :class="{ active: debug.shortJobs }" @click="toggleShortJobs">
+                <svg viewBox="0 0 24 24"><path :d="debug.shortJobs ? icons.check : icons.pin" /></svg>Short jobs
+              </button>
+              <button type="button" class="pill" @click="refreshOffers">
+                <svg viewBox="0 0 24 24"><path :d="icons.refresh" /></svg>New board
+              </button>
+              <button type="button" class="pill" @click="saveCareer">
+                <svg viewBox="0 0 24 24"><path :d="icons.save" /></svg>Save career
+              </button>
+            </div>
           </div>
-          <div class="debug-row">
-            <button v-for="model in state.debugModels" :key="model.key" type="button" class="pill"
-              :class="{ active: debugModel === model.key }" @click="debugModel = model.key">{{ model.label }}</button>
+          <div class="debug-section">
+            <small>Test offer: tier</small>
+            <div class="debug-row">
+              <button type="button" class="pill" :class="{ active: !debugTier }" @click="debugTier = ''">Any</button>
+              <button v-for="tier in debug.tiers" :key="tier.key" type="button" class="pill"
+                :class="{ active: debugTier === tier.key }" @click="debugTier = tier.key">{{ shortTier(tier.label) }}</button>
+            </div>
           </div>
-          <div class="debug-row">
-            <button v-for="fault in state.debugFaults" :key="fault" type="button" class="pill"
-              :class="{ active: debugFault === fault }" @click="debugFault = fault">{{ faultNames[fault] || fault }}</button>
+          <div class="debug-section">
+            <small>Vehicle</small>
+            <div class="debug-row">
+              <button type="button" class="pill" :class="{ active: !debugModel }" @click="debugModel = ''">Any</button>
+              <button v-for="model in debug.models" :key="model.key" type="button" class="pill"
+                :class="{ active: debugModel === model.key }" @click="debugModel = model.key">{{ model.label }}</button>
+            </div>
           </div>
-          <div v-if="debugFault === 'engine'" class="debug-row">
-            <button v-for="option in severityOptions" :key="option.value" type="button" class="pill"
-              :class="{ active: debugSeverity === option.value }" @click="debugSeverity = option.value">{{ option.label }}</button>
+          <div class="debug-section">
+            <small>Fault</small>
+            <div class="debug-row">
+              <button v-for="fault in debug.faults" :key="fault" type="button" class="pill"
+                :class="{ active: debugFault === fault }" @click="debugFault = fault">
+                <svg viewBox="0 0 24 24"><path :d="faultIcon(fault)" fill-rule="evenodd" /></svg>{{ faultNames[fault] || fault }}
+              </button>
+            </div>
           </div>
-          <button type="button" class="btn primary" :disabled="!debugModel || busy" @click="addDebugOffer">Add test tow offer</button>
+          <button type="button" class="btn debug-add" :disabled="busy" @click="addDebugOffer">Add test offer near me</button>
+          <p class="debug-note">
+            <svg viewBox="0 0 24 24"><path :d="icons.bolt" /></svg>buttons on the cards teleport you to the vehicle or the next stop.
+          </p>
         </template>
       </section>
 
@@ -351,6 +378,7 @@ const icons = {
   refresh: 'M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z',
   sort: 'M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z',
   bolt: 'M7 2v11h3v9l7-12h-4l4-8z',
+  save: 'M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z',
   check: 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
   car: 'M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z',
   // Fault icons: fuel pump, tyre (drawn as a ring, see .fault-icon), thermometer, engine block.
@@ -471,17 +499,24 @@ async function refreshOffers() {
   refresh()
 }
 
-// DEBUG, temporary
+// Debug tools: present only when the game sends state.debug (lib/build.lua debugTools).
+const debug = computed(() => state.value?.debug || null)
 const debugOpen = ref(false)
 const debugModel = ref('')
+const debugTier = ref('')
 const debugFault = ref('engine')
-const debugSeverity = ref(0.5)
-const faultNames = { fuel: 'Empty tank', flat: 'Flat tyre', overheat: 'Overheating', engine: 'Failing engine' }
-const severityOptions = [
-  { value: 0, label: 'Mild' },
-  { value: 0.5, label: 'Medium' },
-  { value: 1, label: 'Severe' },
-]
+const faultNames = { fuel: 'Fuel', flat: 'Flat', overheat: 'Overheat', engine: 'Engine' }
+const debugSummary = computed(() => {
+  const d = debug.value
+  if (!d) return []
+  const parts = [d.mapId || '?', `${d.offerCount}${d.target ? `/${d.target}` : ''} offers`]
+  if (d.nextOfferInS != null) {
+    const s = Math.round(d.nextOfferInS)
+    parts.push(`next ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`)
+  }
+  if (d.shortJobs) parts.push('short')
+  return parts
+})
 
 async function teleport(id) {
   if (!props.callLua) return
@@ -495,8 +530,8 @@ async function addDebugOffer() {
   if (!props.callLua || busy.value) return
   busy.value = true
   try {
-    const result = await props.callLua('towRepoHub_core.debugAddTowOffer', debugModel.value, debugFault.value, debugSeverity.value)
-    message.value = result?.ok ? 'Test offer added at the top of the board.' : (result?.reason || 'No answer from the game.')
+    const result = await props.callLua('towRepoHub_core.debugAddTowOffer', debugModel.value, debugFault.value, debugTier.value)
+    message.value = result?.ok ? `Test offer added on top: ${result.label || 'see the board'}.` : (result?.reason || 'No answer from the game.')
   } finally {
     busy.value = false
     refresh()
@@ -504,8 +539,14 @@ async function addDebugOffer() {
 }
 
 async function toggleShortJobs() {
-  if (props.callLua) await props.callLua('towRepoHub_core.setDebugShortJobs', !state.value?.debugShortJobs)
+  if (props.callLua) await props.callLua('towRepoHub_core.setDebugShortJobs', !debug.value?.shortJobs)
   refresh()
+}
+
+async function saveCareer() {
+  if (!props.callLua) return
+  const ok = await props.callLua('towRepoHub_core.debugSaveCareer')
+  message.value = ok ? 'Career save requested.' : 'The career could not be saved now.'
 }
 
 async function routeJob() {
@@ -1036,13 +1077,65 @@ svg { width: 1em; height: 1em; fill: currentColor; flex: none; }
 .debug-panel {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
+  gap: 8px;
   margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px dashed $line;
+  border: 1px dashed rgba(192, 106, 36, .45);
+  border-radius: 10px;
+  background: rgba(192, 106, 36, .05);
+  &.open { padding-bottom: 10px; }
+  .pill.active { border-color: $debug; color: #ffb27a; svg { color: #ffb27a; } }
+}
+.debug-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  background: none;
+  color: #ffb27a;
+  font: inherit;
+  cursor: pointer;
+  svg { font-size: 15px; }
+}
+.debug-title { font-weight: 800; font-size: .8em; letter-spacing: .08em; text-transform: uppercase; }
+.debug-info {
+  display: flex;
+  flex: 1;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  color: $muted;
+  font-size: .75em;
+  white-space: nowrap;
+  span:first-child { overflow: hidden; text-overflow: ellipsis; }
+}
+.debug-chevron { color: $muted; font-size: .8em; }
+.debug-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 10px;
+  small { color: $muted; font-size: .68em; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 }
 .debug-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.debug-add {
+  margin: 2px 10px 0;
+  background: rgba(192, 106, 36, .3);
+  color: #ffd2b0;
+  &:disabled { opacity: .5; cursor: default; }
+}
+.debug-note {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 10px;
+  color: $muted;
+  font-size: .7em;
+  svg { color: #ffb27a; }
+}
 
 .overlay {
   position: absolute;

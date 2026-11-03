@@ -6,6 +6,8 @@ local M = {}
 
 M.config = {
   heavyWeightKg = 3500,
+  -- Heavier vehicles do not fit a tow truck or a car trailer.
+  maxWeightKg = 9000,
   minPlausibleValue = 500,
   maxPlausibleValue = 10000000,
   -- Chance of a tired look (paint and appearance only) on top of the fault.
@@ -54,9 +56,13 @@ M.FAULT_LABELS = {
   engine = "Failing engine",
 }
 
-local VEHICLE_TYPES = { Car = true, Truck = true, Bus = true }
-local BLOCKED_MODELS = { atv = true, wl40 = true, frameless_dump = true }
+-- Buses do not fit a tow truck or a trailer, so tow takes cars and trucks only.
+local VEHICLE_TYPES = { Car = true, Truck = true }
+-- Off-road machines and semi tractors, which no tow truck or car trailer carries.
+local BLOCKED_MODELS = { atv = true, wl40 = true, frameless_dump = true, us_semi = true, citybus = true }
 local MISSION_CONFIG_TYPES = { roleplay = true, police = true }
+-- Trucks the RLS heavy repo tier lists by model, whatever their configuration weighs.
+local HEAVY_MODELS = { md_series = true, midtruck = true }
 
 local function numberOrMin(info, key)
   local value = tonumber(info[key])
@@ -113,16 +119,28 @@ function M.isElectric(info)
   return text:find("electric", 1, true) ~= nil or text:find("hybrid", 1, true) ~= nil
 end
 
+-- Heavy means really heavy: over heavyWeightKg or a medium-duty truck model. The game types
+-- pickups and SUVs as "Truck" too, so the type alone does not make a vehicle heavy.
 function M.isHeavy(info)
   local weight = M.weightKg(info)
-  local vehicleType = M.vehicleType(info)
-  return (weight ~= nil and weight > M.config.heavyWeightKg) or vehicleType == "Truck" or vehicleType == "Bus"
+  return (weight ~= nil and weight > M.config.heavyWeightKg) or HEAVY_MODELS[info.model_key] == true
 end
 
--- A common road vehicle with a plausible catalogue value.
+-- A configuration without an engine, such as a rolling chassis: it cannot be a broken-down car.
+function M.hasNoEngine(info)
+  local name = metadataText(info, { "Name", "Configuration" })
+  if name:find("rolling chassis", 1, true) or name:find("(n/a)", 1, true) then return true end
+  local power = numberOrMin(info, "Power")
+  return power ~= nil and power <= 0
+end
+
+-- A common road vehicle with an engine, a plausible catalogue value and a weight a tow truck carries.
 function M.isEligible(info)
   if type(info) ~= "table" or not VEHICLE_TYPES[M.vehicleType(info)] then return false end
   if BLOCKED_MODELS[info.model_key] then return false end
+  if M.hasNoEngine(info) then return false end
+  local weight = M.weightKg(info)
+  if weight ~= nil and weight > M.config.maxWeightKg then return false end
   local configTypes = metadataText(info, { "Config Type", "configType" })
   for word in configTypes:gmatch("%S+") do
     if MISSION_CONFIG_TYPES[word] then return false end

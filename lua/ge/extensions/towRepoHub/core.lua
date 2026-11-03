@@ -9,6 +9,7 @@ local board = require("towRepoHub/lib/board")
 local jobRules = require("towRepoHub/lib/job")
 local tow = require("towRepoHub/lib/tow")
 local repoTiers = require("towRepoHub/lib/repoTiers")
+local persist = require("towRepoHub/lib/persist")
 
 local M = {}
 
@@ -279,21 +280,23 @@ end
 
 -- Offer generation -----------------------------------------------------------------------------------
 
--- DEBUG, temporary: short jobs for testing. Pickups within DEBUG_MAX_PICKUP_M of the player, the
--- nearest destination and lower minimums. Toggled from the phone app.
+-- Debug tools (lib/build.debugTools): short jobs for testing. Pickups within DEBUG_MAX_PICKUP_M of
+-- the player, the nearest destination and lower minimums. Toggled from the phone app.
+local DEBUG_TOOLS = require("towRepoHub/lib/build").debugTools == true
 local debugShortJobs = false
 local DEBUG_MAX_PICKUP_M = 1500
 local DEBUG_MIN_PICKUP_FROM_PLAYER_M = 50
 local DEBUG_MIN_LOADED_ROUTE_M = 100
 
--- DEBUG, temporary: vehicles offered by the test tow offer panel (debugAddTowOffer).
+-- Debug tools: vehicles offered by the test tow offer panel (debugAddTowOffer); any model of a
+-- chosen tier is the other option.
 local DEBUG_MODELS = {
-  { key = "covet", label = "Ibishu Covet" },
-  { key = "midsize", label = "Ibishu Pessima" },
+  { key = "covet", label = "Covet" },
+  { key = "midsize", label = "Pessima" },
+  { key = "fullsize", label = "Grand Marshal" },
   { key = "etk800", label = "ETK 800" },
-  { key = "pickup", label = "Gavril D-Series" },
-  { key = "van", label = "Gavril H-Series" },
-  { key = "fullsize", label = "Gavril Grand Marshal" },
+  { key = "pickup", label = "D-Series" },
+  { key = "van", label = "H-Series" },
 }
 
 local function pickPickupSpot(state, fromPos, destPos)
@@ -775,7 +778,7 @@ local function heatEngine(vehicle)
   vehicle:queueLuaCommand(string.format(VLUA_HOT_ENGINE, t, t, t, t, t))
 end
 
-local function prepareTargetForPickup(job, vehicle)
+local function prepareTargetForPickup(job, vehicle, resumed)
   -- Keep traffic AI off the target, as RLS repo does.
   if gameplay_traffic and gameplay_traffic.insertTraffic then
     pcall(function()
@@ -785,7 +788,7 @@ local function prepareTargetForPickup(job, vehicle)
     end)
   end
   vehicle:queueLuaCommand('input.event("parkingbrake", 1, "FILTER_DI", nil, nil, nil, nil)')
-  if job.fault == "overheat" then heatEngine(vehicle) end
+  if job.fault == "overheat" and not resumed then heatEngine(vehicle) end
 end
 
 -- Tow jobs pay for towing: metres the player drives the target themselves are counted, and beyond
@@ -814,14 +817,23 @@ local function trackSelfDrive(job, targetPos)
   end
 end
 
+local resolveOfferRuntime
+
+-- Set while the level unloads and until the target is back, so its disappearance is not a loss.
+local unloading = false
+local restorePending = false
+
 local function updateJob()
   local job = activeJob
   if not job or job.completing then return end
-  if job.mapId ~= levelId() then return end
+  if job.mapId ~= levelId() or unloading or restorePending then return end
   local vehicle = job.vehicleId and getObjectByID(job.vehicleId)
   if not vehicle then failJob(job, "lost"); return end
 
   local targetPos = vehicle:getPosition()
+  -- Pose kept for saving: the spawn rotation convention RLS recovery uses (persistence.lua).
+  job.targetPose = { pos = vecToArray(targetPos),
+    rot = (function() local q = quat(0, 0, 1, 0) * quat(vehicle:getRefNodeRotation()); return { q.x, q.y, q.z, q.w } end)() }
   trackSelfDrive(job, targetPos)
   local playerPos = playerPosition()
   if playerPos and jobRules.needsBaseline(job, playerPos:distance(targetPos)) then
@@ -968,11 +980,40 @@ local function offerLocked(offer, level)
   return not tierUnlocked({ skillUnlockLevel = offer.unlockLevel, skillUnlockFlag = offer.unlockFlag }, level)
 end
 
+-- Offers loaded from a save have no RLS spot objects; finds them again by spot key and
+-- destination id. Leaves offer.runtime nil when the spot or destination is gone.
+resolveOfferRuntime = function(offer)
+  local spot
+  for _, candidate in ipairs(cityParkingSpots()) do
+    if spotKey(candidate) == offer.spotKey then spot = candidate break end
+  end
+  local facility
+  for _, dealership in ipairs(dealerships()) do
+    if dealership.id == offer.destinationId then facility = dealership break end
+  end
+  if not facility then
+    for _, garage in ipairs(overhaul_world_facilities.getFacilitiesByType("garage", levelId()) or {}) do
+      if garage.id == offer.destinationId then facility = garage break end
+    end
+  end
+  local dropSpots = facility and facilitySpots(facility) or {}
+  if not spot or #dropSpots == 0 then return end
+  local dropSpot = dropSpots[1]
+  for _, candidate in ipairs(dropSpots) do
+    if candidate.name == offer.dropSpotName then dropSpot = candidate break end
+  end
+  offer.runtime = { spot = spot, dropSpot = dropSpot, dropSpots = dropSpots }
+end
+
 local function acceptOffer(id)
   if activeJob then return { ok = false, reason = "Finish or cancel your active job first." } end
   if boardDisabledReason() then return { ok = false, reason = boardDisabledReason() } end
   local offer = findOffer(id)
-  if not offer or not offer.runtime then return { ok = false, reason = "This offer is no longer available." } end
+  if offer and not offer.runtime then resolveOfferRuntime(offer) end
+  if not offer or not offer.runtime then
+    if offer then removeOffer(offer.id) end
+    return { ok = false, reason = "This offer is no longer available." }
+  end
   if offerLocked(offer, skillLevel()) then
     return { ok = false, reason = string.format("This job unlocks at Recovery level %d.", offer.unlockLevel or 0) }
   end
@@ -1056,10 +1097,19 @@ local function clearCompletion()
   return true
 end
 
+-- The map's display name, as RLS employment shows it.
+local function mapLabel(mapId)
+  local info = core_levels and core_levels.getLevelByName(mapId)
+  local title = info and info.title
+  if title and translateLanguage then title = translateLanguage(title, title, true) end
+  return title or tostring(mapId)
+end
+
 local function activeJobView(job)
+  local otherMap = job.mapId ~= levelId()
   local vehicle = job.vehicleId and getObjectByID(job.vehicleId)
   local nextStop = arrayToVec(job.custody and job.dropPos or job.pickupPos)
-  local from = job.custody and vehicle and vehicle:getPosition() or playerPosition()
+  local from = not otherMap and (job.custody and vehicle and vehicle:getPosition() or playerPosition())
   return {
     jobType = job.jobType,
     tierLabel = job.tierLabel,
@@ -1079,8 +1129,210 @@ local function activeJobView(job)
     phase = job.completing and "completing" or (job.custody and "delivery" or "pickup"),
     distanceToNextM = from and from:distance(nextStop) or nil,
     cancelFine = jobRules.endsWithFine(job) and pricing.custodyFine(job.quote) or 0,
-    otherMap = job.mapId ~= levelId(),
+    otherMap = otherMap,
+    mapLabel = otherMap and mapLabel(job.mapId) or nil,
   }
+end
+
+-- Persistence --------------------------------------------------------------------------------------------
+-- Saved with the RLS career (onOverhaulSaveCurrentProfile) and, around a Lua reload, in a session
+-- file. The target vehicle is not an RLS inventory vehicle, so it is respawned from the saved pose,
+-- part conditions and fuel; on a flatbed or trailer it is placed back on the carrier with the RLS
+-- carriedFrame relation (docs/rls-integration.md 7.4).
+
+local SAVE_DIR = "/career/towRepoHub"
+local SAVE_FILE = SAVE_DIR .. "/state.json"
+local SESSION_FILE = "/temp/towRepoHub/session.json"
+local SNAPSHOT_S = 10
+local CARRIER_SEARCH_M = 12
+local RESTORE_WAIT_S = 20
+
+local snapshotTimer = 0
+local restoreWaited = 0
+local carriedFrame
+
+local function getCarriedFrame()
+  carriedFrame = carriedFrame or tryRequire("overhaul/lib/vehicles/carriedFrame")
+  return carriedFrame
+end
+
+local function inventory() return overhaul_career_garage_inventory end
+
+-- Part conditions and fuel of the target, refreshed every SNAPSHOT_S while a job runs; saving reads
+-- the latest copy because these values only come back asynchronously.
+local function snapshotTarget(job)
+  local vehicle = job.vehicleId and getObjectByID(job.vehicleId)
+  if not (vehicle and core_vehicleBridge) then return end
+  requestPartConditions(vehicle, function(conditions)
+    if activeJob == job and type(conditions) == "table" then job.conditions = conditions end
+  end)
+  core_vehicleBridge.requestValue(vehicle, function(response)
+    local tanks = response and (response.result or response)
+    tanks = type(tanks) == "table" and (tanks[1] or tanks) or {}
+    if activeJob ~= job then return end
+    job.energy = {}
+    for _, tank in ipairs(tanks) do
+      if type(tank) == "table" and tank.name then
+        job.energy[#job.energy + 1] = { name = tank.name, energy = tonumber(tank.currentEnergy) or 0 }
+      end
+    end
+  end, "energyStorage")
+end
+
+-- Records which vehicle carries the target, if any: the player's own vehicles nearby, checked by
+-- carriedFrame, which only finds a support when the target rests on a deck.
+local function captureCarrier(job)
+  job.carrier = nil
+  local target = job.vehicleId and getObjectByID(job.vehicleId)
+  local frames = getCarriedFrame()
+  if not (target and frames and getAllVehicles) then return end
+  local targetPos = target:getPosition()
+  for _, candidate in ipairs(getAllVehicles() or {}) do
+    local id = candidate:getID()
+    local invId = id ~= job.vehicleId and inventory() and inventory().getInventoryIdFromVehicleId(id)
+    if invId and candidate:getPosition():distance(targetPos) <= CARRIER_SEARCH_M then
+      local support = frames.capture(target, candidate)
+      if support then
+        local offset = candidate:getRefNodeMatrix():inverse() * target:getRefNodeMatrix()
+        local pos, rot = offset:getPosition(), offset:toEuler()
+        job.carrier = { inventoryId = invId, support = support,
+          offset = { x = pos.x, y = pos.y, z = pos.z, rx = rot.x, ry = rot.y, rz = rot.z } }
+        log("I", LOG_TAG, "target is carried by inventory vehicle " .. tostring(invId))
+        return
+      end
+    end
+  end
+end
+
+local function stateForSave()
+  if activeJob and activeJob.vehicleId then captureCarrier(activeJob) end
+  return persist.build({ boards = boards, activeJob = activeJob, simMinutes = simMinutes, nextOfferId = nextOfferId })
+end
+
+local function applySaved(data, source)
+  local state, reason = persist.restore(data)
+  if not state then
+    if data ~= nil then log("W", LOG_TAG, "ignoring saved state from " .. source .. ": " .. tostring(reason)) end
+    return
+  end
+  simMinutes, nextOfferId, boards = state.simMinutes, state.nextOfferId, state.boards
+  activeJob = state.activeJob
+  if activeJob then
+    activeJob.vehicleId = nil
+    restorePending = true
+    restoreWaited = 0
+  end
+  local count = 0
+  for _ in pairs(boards) do count = count + 1 end
+  log("I", LOG_TAG, string.format("state loaded from %s: %d boards, %s", source, count,
+    activeJob and ("active job on " .. tostring(activeJob.mapId)) or "no active job"))
+end
+
+local function loadFromCareerSave()
+  local saveSystem = overhaul_career_saveSystem
+  if not (saveSystem and saveSystem.getCurrentProfile) then return end
+  local _, savePath = saveSystem.getCurrentProfile()
+  if not savePath then return end
+  applySaved(jsonReadFile(savePath .. SAVE_FILE), "career save")
+end
+
+-- Respawns the active job's target on this map: on its carrier when it was carried, else at its
+-- saved pose; then its condition, fuel and fault. Waits up to RESTORE_WAIT_S for the carrier,
+-- which RLS restores from the player's inventory on its own schedule.
+local function tryRestoreTarget(dt)
+  local job = activeJob
+  if not restorePending or not job then restorePending = false return end
+  if job.mapId ~= levelId() then return end
+  if not be:getPlayerVehicle(0) then return end
+
+  restoreWaited = restoreWaited + dt
+  local carrier
+  if job.carrier and inventory() then
+    local carrierId = inventory().getVehicleIdFromInventoryId(job.carrier.inventoryId)
+    carrier = carrierId and getObjectByID(carrierId)
+    if not carrier and restoreWaited < RESTORE_WAIT_S then return end
+  end
+
+  local pose = job.targetPose or { pos = job.custody and job.dropPos or job.pickupPos, rot = { 0, 0, 0, 1 } }
+  local spot = { pos = arrayToVec(pose.pos), rot = quat(pose.rot[1], pose.rot[2], pose.rot[3], pose.rot[4]) }
+  local vehicle = spawnTarget(job, spot)
+  restorePending = false
+  if not vehicle then
+    log("W", LOG_TAG, "could not respawn the job vehicle; ending the job without a fine")
+    ui_message("The tow job vehicle could not be restored. The job ended without a fine.", 8, LOG_TAG, "warning")
+    endJob(job)
+    return
+  end
+  job.vehicleId = vehicle:getID()
+
+  local frames = getCarriedFrame()
+  local matrix = carrier and frames and frames.transform(carrier, job.carrier)
+  if matrix then
+    vehicle:setTransform(matrix)
+    if vehicle.resetBrokenFlexMesh then vehicle:resetBrokenFlexMesh() end
+    log("I", LOG_TAG, "job vehicle placed back on its carrier")
+  end
+  if core_vehicleBridge then
+    if type(job.conditions or job.baseline) == "table" then
+      pcall(core_vehicleBridge.executeAction, vehicle, "initPartConditions", job.conditions or job.baseline, 0, 1, 1)
+    end
+    for _, tank in ipairs(job.energy or {}) do
+      pcall(core_vehicleBridge.executeAction, vehicle, "setEnergyStorageEnergy", tank.name, tank.energy)
+    end
+  end
+  if job.baselineRequested then prepareTargetForPickup(job, vehicle, true) end
+
+  local temporary = tryRequire("overhaul/lib/vehicles/temporary")
+  if temporary then
+    disposeTemporary = temporary.declare(LOG_TAG, function()
+      if activeJob then removeTargetVehicle(activeJob) end
+    end)
+  end
+  job.lastTargetPos = vecToArray(vehicle:getPosition())
+  if job.custody then
+    setRoute(arrayToVec(job.dropPos))
+    showDeliveryMarker(arrayToVec(job.dropPos))
+  else
+    setRoute(arrayToVec(job.pickupPos))
+  end
+  ui_message(string.format("Tow job resumed: %s.", vehicleLabel(job)), 6, LOG_TAG, "info")
+  log("I", LOG_TAG, "job vehicle restored")
+end
+
+-- Takes the target out of the world but keeps the job, for map travel and Lua reload. On a level
+-- unload the level deletes the vehicle itself (deleteVehicle false).
+local function parkJob(job, deleteVehicle)
+  if not job then return end
+  if job.vehicleId then captureCarrier(job) end
+  clearDeliveryMarker()
+  if routeLease then routeLease.clear() end
+  if disposeTemporary then disposeTemporary(); disposeTemporary = nil end
+  local vehicle = job.vehicleId and getObjectByID(job.vehicleId)
+  job.vehicleId = nil
+  if vehicle and deleteVehicle then vehicle:delete() end
+  restorePending = true
+  restoreWaited = 0
+end
+
+-- State to resume: the session file a Lua reload left for this profile, else the career save.
+local SESSION_MAX_AGE_S = 600
+local resumedFromSession = false
+
+local function profileName()
+  local saveSystem = overhaul_career_saveSystem
+  return saveSystem and saveSystem.getCurrentProfile and saveSystem.getCurrentProfile() or nil
+end
+
+local function loadState()
+  local session = jsonReadFile(SESSION_FILE)
+  if session then
+    FS:removeFile(SESSION_FILE)
+    if session.profile == profileName() and math.abs(os.time() - (tonumber(session.savedAt) or 0)) <= SESSION_MAX_AGE_S then
+      applySaved(session, "session")
+      return true
+    end
+  end
+  loadFromCareerSave()
 end
 
 -- Phone app API ----------------------------------------------------------------------------------------
@@ -1128,14 +1380,30 @@ local function getState()
     offers = {},
     activeJob = activeJob and activeJobView(activeJob) or nil,
     lastCompletion = lastCompletion,
-    debugShortJobs = debugShortJobs,
-    debugModels = DEBUG_MODELS,
-    debugFaults = tow.FAULTS,
   }
   local current = not state.disabledReason and currentBoard() or nil
   if current then
     for _, offer in ipairs(current.offers) do state.offers[#state.offers + 1] = offerView(offer, level) end
     state.filling = current.filling
+  end
+  if DEBUG_TOOLS then
+    local _, tierByTag = loadRepoTiers()
+    local tiers = {}
+    for _, tier in ipairs(tow.VALUE_TIERS) do
+      tiers[#tiers + 1] = { key = tier.key, label = tow.tierLabel(tierByTag[tier.key] and tierByTag[tier.key].tierLabel or tier.key) }
+    end
+    tiers[#tiers + 1] = { key = tow.HEAVY_TIER,
+      label = tow.tierLabel(tierByTag[tow.HEAVY_TIER] and tierByTag[tow.HEAVY_TIER].tierLabel or "Heavy") }
+    state.debug = {
+      shortJobs = debugShortJobs,
+      models = DEBUG_MODELS,
+      tiers = tiers,
+      faults = tow.FAULTS,
+      mapId = levelId(),
+      offerCount = current and #current.offers or 0,
+      target = current and current.target or nil,
+      nextOfferInS = current and current.nextOfferAt and math.max(0, (current.nextOfferAt - simMinutes) * 60) or nil,
+    }
   end
   -- The next tier the player unlocks, for the app header.
   local tiers = loadRepoTiers()
@@ -1170,8 +1438,9 @@ local function resetBoard()
 end
 
 -- Replaces every offer on the current board; recently used spots stay excluded.
--- DEBUG, temporary: players may not reroll the board (spec: Problem).
+-- Debug tools only: players may not reroll the board (spec: Problem).
 local function refreshOffers()
+  if not DEBUG_TOOLS then return false end
   local state = currentBoard()
   if not state then return false end
   local fresh = board.newState(simMinutes)
@@ -1181,23 +1450,33 @@ local function refreshOffers()
   return true
 end
 
--- DEBUG, temporary: test tow offers for a chosen vehicle and fault, placed near the player.
--- Console: towRepoHub_core.debugAddTowOffer("covet", "engine", 0.5)
-local function debugAddTowOffer(modelKey, fault, severity)
+-- Debug tools: a test tow offer placed near the player, for a vehicle model, a tier or both (nil or
+-- "" for any) and a fault.
+-- Console: towRepoHub_core.debugAddTowOffer("covet", "engine", "junkerVeh")
+local function debugAddTowOffer(modelKey, fault, wantedTier)
+  if not DEBUG_TOOLS then return { ok = false, reason = "Debug tools are off." } end
   if not tow.isFault(fault) then return { ok = false, reason = "Unknown fault: " .. tostring(fault) } end
+  if modelKey == "" then modelKey = nil end
+  if wantedTier == "" then wantedTier = nil end
   local state, fromPos, pool = currentBoard(), playerPosition(), getRepoPool()
   if not (state and fromPos and pool) then return { ok = false, reason = "No board, player or RLS data." } end
   local cache = currentMapCache()
   cache.eligibleVehicles = cache.eligibleVehicles or require("util/configListGenerator").getEligibleVehicles(false, false) or {}
   local matches = {}
   for _, info in ipairs(cache.eligibleVehicles) do
-    if info.model_key == modelKey and tow.tierKey(info) then matches[#matches + 1] = info end
+    local key = tow.tierKey(info)
+    if key and (not modelKey or info.model_key == modelKey) and (not wantedTier or key == wantedTier) then
+      matches[#matches + 1] = info
+    end
   end
-  if #matches == 0 then return { ok = false, reason = "No tow configuration for " .. tostring(modelKey) .. "." } end
+  if #matches == 0 then
+    return { ok = false, reason = string.format("No tow vehicle for %s in %s.", modelKey or "any model", wantedTier or "any tier") }
+  end
 
   local info = deepcopy(matches[math.random(#matches)])
   rollUsedCondition(info)
-  local tierKey = tow.tierKey(info)
+  -- A used vehicle may be worth less than its tier; the chosen tier still applies.
+  local tierKey = wantedTier or tow.tierKey(info)
   local _, tierByTag = loadRepoTiers()
   if not tierByTag[tierKey] then return { ok = false, reason = "No tier data for " .. tostring(tierKey) .. "." } end
   local tier = tow.tierData(tierKey, tierByTag[tierKey])
@@ -1214,11 +1493,12 @@ local function debugAddTowOffer(modelKey, fault, severity)
   if not offer then return { ok = false, reason = "No free parking spot near you." } end
 
   offer.destinationKind = kind
+  -- Test offers are never locked, so tiers above the player's level (Heavy) can be tried.
+  offer.unlockLevel, offer.unlockFlag = 0, nil
   offer.fault = fault
-  offer.engineIntegrity = fault == "engine" and tow.engineIntegrity(tonumber(severity) or 0.5) or nil
+  offer.engineIntegrity = fault == "engine" and tow.engineIntegrity(math.random()) or nil
   offer.shabby = false
   offer.faultLabel = tow.faultLabel(fault)
-    .. (offer.engineIntegrity and string.format(" (integrity %.2f)", offer.engineIntegrity) or "")
   offer.id = nextOfferId
   nextOfferId = nextOfferId + 1
   offer.createdAt = simMinutes
@@ -1227,12 +1507,13 @@ local function debugAddTowOffer(modelKey, fault, severity)
   offer.liveFrom = vecToArray(fromPos)
   if #state.offers >= board.config.size then table.remove(state.offers) end
   table.insert(state.offers, 1, offer)
-  log("I", LOG_TAG, string.format("debug offer %d: %s %s [%s] -> %s", offer.id, tostring(offer.brand),
-    tostring(offer.name), offer.faultLabel, offer.destinationName))
-  return { ok = true }
+  log("I", LOG_TAG, string.format("debug offer %d: %s %s [%s, %s] -> %s", offer.id, tostring(offer.brand),
+    tostring(offer.name), offer.tierLabel or tierKey, offer.faultLabel, offer.destinationName))
+  return { ok = true, label = string.format("%s %s (%s)", tostring(offer.brand), tostring(offer.name),
+    tostring(offer.tierLabel or tierKey)) }
 end
 
--- DEBUG, temporary: moves the player to the road next to a position, facing it. The vehicle is
+-- Debug tools: moves the player to the road next to a position, facing it. The vehicle is
 -- not reset, so a trailer and its load stay as they are.
 local function debugTeleportNear(pos)
   local vehicle = be:getPlayerVehicle(0)
@@ -1251,8 +1532,9 @@ local function debugTeleportNear(pos)
   return true
 end
 
--- DEBUG, temporary: teleports to an offer's vehicle, or with no id to the active job's next stop.
+-- Debug tools: teleports to an offer's vehicle, or with no id to the active job's next stop.
 local function debugTeleport(id)
+  if not DEBUG_TOOLS then return false end
   local pos
   if id then
     local offer = findOffer(id)
@@ -1266,12 +1548,23 @@ local function debugTeleport(id)
   return ok and err
 end
 
--- DEBUG, temporary: see debugShortJobs.
+-- Debug tools: see debugShortJobs.
 local function setDebugShortJobs(enabled)
+  if not DEBUG_TOOLS then return false end
   debugShortJobs = enabled == true
   log("I", LOG_TAG, "debug short jobs " .. (debugShortJobs and "on" or "off"))
   refreshOffers()
   return debugShortJobs
+end
+
+-- Debug tools: saves the career now, to test persistence.
+local function debugSaveCareer()
+  if not DEBUG_TOOLS then return false end
+  local saveSystem = overhaul_career_saveSystem
+  if not (saveSystem and saveSystem.saveCurrent) then return false end
+  local accepted = saveSystem.saveCurrent(nil, { manual = true, force = true })
+  log("I", LOG_TAG, "debug career save " .. (accepted and "requested" or "refused"))
+  return accepted ~= false
 end
 
 -- Hooks ----------------------------------------------------------------------------------------------
@@ -1283,17 +1576,83 @@ local function onExtensionLoaded()
     recordJob = logbookFeed.register(LOGBOOK_ID,
       { title = "Tow job completed", label = "Jobs", icon = "carCoins" }, "towRepoHub/core.lua")
   end
+  -- After a Lua reload the session file holds the state from just before it; otherwise, with a
+  -- career already running, the career save does.
+  if careerActive() then resumedFromSession = loadState() end
   log("I", LOG_TAG, "loaded")
 end
 
 local function onExtensionUnloaded()
-  if activeJob then endJob(activeJob) end
+  if careerActive() then
+    local ok, err = pcall(function()
+      local data = stateForSave()
+      data.profile, data.savedAt = profileName(), os.time()
+      if activeJob then parkJob(activeJob, true) end
+      jsonWriteFile(SESSION_FILE, data, false)
+    end)
+    if not ok then log("W", LOG_TAG, "could not keep the state over the reload: " .. tostring(err)) end
+    if activeJob then removeTargetVehicle(activeJob) end
+  elseif activeJob then
+    endJob(activeJob)
+  end
 end
 
+local function onOverhaulSaveCurrentProfile(savePath, _, writer)
+  if not savePath or not careerActive() then return end
+  local ok, err = pcall(function()
+    writer = writer or (overhaul_career_saveSystem and overhaul_career_saveSystem.getSaveWriter and overhaul_career_saveSystem.getSaveWriter())
+    local dir = savePath .. SAVE_DIR
+    if writer and writer.exists and not writer.exists(dir) then writer.mkdir(dir) end
+    local data = stateForSave()
+    if overhaul_career_saveSystem and overhaul_career_saveSystem.jsonWriteFileSafe then
+      overhaul_career_saveSystem.jsonWriteFileSafe(savePath .. SAVE_FILE, data, true)
+    else
+      jsonWriteFile(savePath .. SAVE_FILE, data, true)
+    end
+  end)
+  if not ok then log("W", LOG_TAG, "saving failed: " .. tostring(err)) end
+end
+
+-- Career start or load: read this save's hub state. Right after a Lua reload the session state is
+-- newer than the save, so the first activation keeps it.
+local function onOverhaulModulesActivated()
+  if resumedFromSession then resumedFromSession = false return end
+  activeJob, boards, lastCompletion = nil, {}, nil
+  simMinutes, nextOfferId = 0, 1
+  loadState()
+end
+
+local function onOverhaulBeforeSetProfile()
+  if activeJob then removeTargetVehicle(activeJob) end
+  activeJob, boards, lastCompletion, restorePending = nil, {}, nil, false
+end
+
+local function onWorldReadyState(state)
+  if state == 2 then
+    unloading = false
+    if activeJob and not activeJob.vehicleId then restorePending = true; restoreWaited = 0 end
+  end
+end
+
+local function onClientStartMission()
+  unloading = false
+end
 local function onUpdate(dtReal, dtSim)
   if not careerActive() then return end
   simMinutes = simMinutes + math.max(tonumber(dtSim) or 0, 0) / 60
   local dt = tonumber(dtReal) or 0
+  if restorePending and not unloading then
+    local ok, err = pcall(tryRestoreTarget, dt)
+    if not ok then
+      log("E", LOG_TAG, "restoring the job vehicle failed: " .. tostring(err))
+      restorePending = false
+    end
+  end
+  snapshotTimer = snapshotTimer + dt
+  if snapshotTimer >= SNAPSHOT_S then
+    snapshotTimer = 0
+    if activeJob and activeJob.vehicleId then pcall(snapshotTarget, activeJob) end
+  end
   jobTimer = jobTimer + dt
   if jobTimer >= JOB_TICK_S then
     jobTimer = 0
@@ -1309,19 +1668,20 @@ local function onUpdate(dtReal, dtSim)
 end
 
 local function onVehicleDestroyed(vehicleId)
+  if unloading then return end
   if activeJob and activeJob.vehicleId == vehicleId and not activeJob.completing then
     activeJob.vehicleId = nil
     failJob(activeJob, "destroyed")
   end
 end
 
--- Map travel and level unload remove the target. Until persistence (spec step 6) the job ends
--- here without a fine.
+-- Map travel and level unload: the job pauses and its vehicle comes back when the player returns to
+-- that map (onWorldReadyState). Its pose and carrier are captured before the level goes.
 local function onClientEndMission()
-  if activeJob then
-    log("I", LOG_TAG, "level unloaded with an active job; ending it without a fine")
-    activeJob.vehicleId = nil
-    endJob(activeJob)
+  unloading = true
+  if activeJob and activeJob.vehicleId then
+    pcall(parkJob, activeJob, false)
+    log("I", LOG_TAG, "level unloaded with an active job; it resumes on " .. tostring(activeJob.mapId))
   end
   generationCo, generationCo_state = nil, nil
   mapCache = {}
@@ -1350,11 +1710,17 @@ M.refreshOffers = refreshOffers
 M.setDebugShortJobs = setDebugShortJobs
 M.debugAddTowOffer = debugAddTowOffer
 M.debugTeleport = debugTeleport
+M.debugSaveCareer = debugSaveCareer
 M.onExtensionUnloaded = onExtensionUnloaded
 M.onVehicleDestroyed = onVehicleDestroyed
 M.onExtensionLoaded = onExtensionLoaded
 M.onUpdate = onUpdate
 M.onClientEndMission = onClientEndMission
+M.onOverhaulSaveCurrentProfile = onOverhaulSaveCurrentProfile
+M.onOverhaulModulesActivated = onOverhaulModulesActivated
+M.onOverhaulBeforeSetProfile = onOverhaulBeforeSetProfile
+M.onWorldReadyState = onWorldReadyState
+M.onClientStartMission = onClientStartMission
 M.onOverhaulActive = onOverhaulActive
 
 return M

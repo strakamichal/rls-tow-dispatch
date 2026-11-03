@@ -26,9 +26,22 @@ return function(t)
 
     { "heavy vehicles get the heavy tier", function()
       t.eq(tow.tierKey(car({ Weight = 3600 })), "heavyVeh", "over 3.5 t")
-      t.eq(tow.tierKey(car({ Type = "Truck", Weight = 2000 })), "heavyVeh", "truck")
-      t.eq(tow.tierKey(car({ Type = "Bus" })), "heavyVeh", "bus")
+      t.eq(tow.tierKey(car({ Type = "Truck", Weight = 2000 })), "junkerVeh", "a pickup is typed Truck but is not heavy")
+      t.eq(tow.tierKey(car({ Type = "Truck", model_key = "md_series", Weight = 3000 })), "heavyVeh", "medium-duty truck")
       t.eq(tow.tierKey(car({ Weight = 3500 })), "junkerVeh", "exactly 3.5 t is not heavy")
+    end },
+
+    { "vehicles a tow truck cannot carry are not offered", function()
+      t.eq(tow.tierKey(car({ Type = "Bus" })), nil, "bus")
+      t.eq(tow.tierKey(car({ Type = "Truck", model_key = "us_semi", Weight = 7000 })), nil, "semi tractor")
+      t.eq(tow.tierKey(car({ Weight = 12000 })), nil, "over the weight limit")
+    end },
+
+    { "configurations without an engine are not offered", function()
+      t.eq(tow.tierKey(car({ Name = "T-Series TC82 Rolling Chassis (N/A)" })), nil, "rolling chassis")
+      t.eq(tow.tierKey(car({ Name = "Bare Frame (N/A)" })), nil, "no transmission")
+      t.eq(tow.tierKey(car({ Power = 0 })), nil, "no power")
+      t.eq(tow.tierKey(car({ Name = "Covet 1.5 LE (M)", Power = 80 })), "junkerVeh", "a normal car")
     end },
 
     { "aggregates stand in for missing fields", function()
@@ -45,7 +58,7 @@ return function(t)
       info.aggregates = { Type = { Car = true } }
       t.eq(tow.tierKey(info), "junkerVeh", "car from aggregates")
       info.aggregates.Type = { Truck = true }
-      t.eq(tow.tierKey(info), "heavyVeh", "truck from aggregates")
+      t.eq(tow.tierKey(info), "junkerVeh", "truck from aggregates")
       info.aggregates.Type = { Trailer = true }
       t.eq(tow.tierKey(info), nil, "trailer from aggregates")
     end },

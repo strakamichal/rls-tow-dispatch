@@ -6,6 +6,13 @@ cd "$(dirname "$0")/.."
 
 MOD_DIRS=(lua scripts gameplay ui)
 OUT=dist/tow_repo_hub.zip
+BUILD_FILE=lua/ge/extensions/towRepoHub/lib/build.lua
+
+# A release must not ship the debug tools; --debug packages a test build anyway.
+if [[ "${1:-}" != "--debug" ]] && grep -Eq '^\s*debugTools\s*=\s*true' "$BUILD_FILE"; then
+  echo "Debug tools are on in $BUILD_FILE. Set debugTools = false for a release, or pass --debug." >&2
+  exit 1
+fi
 
 present=()
 for dir in "${MOD_DIRS[@]}"; do

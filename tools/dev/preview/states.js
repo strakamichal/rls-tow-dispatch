@@ -11,12 +11,20 @@
     skill: { level: 14, fraction: 0.62, toNext: 1190 },
     boardSize: 14,
     nextUnlock: { level: 15, label: 'Luxury Repo' },
-    debugShortJobs: false,
-    debugModels: [
-      { key: 'covet', label: 'Ibishu Covet' },
-      { key: 'pickup', label: 'Gavril D-Series' },
-    ],
-    debugFaults: ['fuel', 'flat', 'overheat', 'engine'],
+    // Only in builds with debug tools (lib/build.lua).
+    debug: {
+      shortJobs: true, mapId: 'west_coast_usa', offerCount: 5, target: 12, nextOfferInS: 84,
+      models: [
+        { key: 'covet', label: 'Covet' }, { key: 'midsize', label: 'Pessima' }, { key: 'fullsize', label: 'Grand Marshal' },
+        { key: 'etk800', label: 'ETK 800' }, { key: 'pickup', label: 'D-Series' }, { key: 'van', label: 'H-Series' },
+      ],
+      tiers: [
+        { key: 'junkerVeh', label: 'Low Value Tow' }, { key: 'smallVeh', label: 'Budget Tow' },
+        { key: 'fleetVeh', label: 'Standard Tow' }, { key: 'highEndVeh', label: 'Luxury Tow' },
+        { key: 'exoticVeh', label: 'Exotic Tow' }, { key: 'heavyVeh', label: 'Heavy Tow' },
+      ],
+      faults: ['fuel', 'flat', 'overheat', 'engine'],
+    },
   }
 
   let nextId = 1
@@ -65,6 +73,12 @@
       offers: openOffers,
       activeJob: Object.assign({}, activeJob, { custody: true, phase: 'delivery', distanceToNextM: 1830, cancelFine: 859 }),
     }),
+    // The player travelled to another map with the car on the bed; the job waits on its map.
+    othermap: Object.assign({}, base, {
+      offers: openOffers,
+      activeJob: Object.assign({}, activeJob, { custody: true, phase: 'delivery', distanceToNextM: null, cancelFine: 859,
+        otherMap: true, mapLabel: 'West Coast, USA' }),
+    }),
     // Driving the car within the free distance, e.g. onto a trailer.
     driving: Object.assign({}, base, {
       offers: openOffers,
@@ -112,7 +126,10 @@
     help: ['.help-btn'],
     locked: ['.offers-toggle'],
     cancel: ['.card.active .btn:not(.primary)'],
+    debug: ['.debug-head', '.debug-section:nth-of-type(2) .pill:nth-child(7)'],
+
   }
+  window.PREVIEW_STATES.debug = Object.assign({}, window.PREVIEW_STATES.empty, { filling: false })
   window.PREVIEW_STATES.help = window.PREVIEW_STATES.list
   window.PREVIEW_STATES.locked = window.PREVIEW_STATES.list
   window.PREVIEW_STATES.cancel = window.PREVIEW_STATES.delivery
