@@ -33,11 +33,21 @@ The repo root is the mod root; the packaged zip mirrors it.
 
 ## Build and run
 
-- Tests: `tools/test.sh` (needs LuaJIT: `brew install luajit` / `scoop install luajit`)
+- Tests: `tools/test.sh` (needs LuaJIT: `brew install luajit` / `scoop install luajit`).
+  CI runs them on every push (`.github/workflows/tests.yml`).
+- RLS source for reference: `tools/fetch-rls.sh` → `.cache/rls` (source files only,
+  not committed). Search there instead of the GitHub API. Integration notes:
+  [docs/rls-integration.md](docs/rls-integration.md).
 - Package: `tools/package.sh` → `dist/tow_repo_hub.zip`
-- Install: copy the zip into the BeamNG user folder `mods/` (keep it zipped),
-  enable it in Mods → Manager, restart the game.
-- Logs: `beamng.log` in the BeamNG user folder.
+
+On the Windows gaming PC (PowerShell; scripts not yet verified on a real install):
+
+- Deploy unpacked for fast iteration: `tools/dev/deploy.ps1` → `mods/unpacked/tow_repo_hub`.
+  Reload Lua in game with Ctrl+L; UI changes need Ctrl+F5 or a restart.
+- Deploy as players install it: `tools/dev/deploy.ps1 -Zip`.
+- Follow the log: `tools/dev/log.ps1` (filtered to hub messages, errors and warnings).
+- Both scripts look for the BeamNG user folder under `%LOCALAPPDATA%`; pass `-UserFolder`
+  if it lives elsewhere (launcher: Manage User Folder → Open in Explorer).
 
 ## Verification
 
