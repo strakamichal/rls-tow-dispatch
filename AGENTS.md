@@ -50,6 +50,12 @@ On the Windows gaming PC (PowerShell; scripts not yet verified on a real install
   Reload Lua in game with Ctrl+L; UI changes need Ctrl+F5 or a restart.
 - Deploy as players install it: `tools/dev/deploy.ps1 -Zip`.
 - Follow the log: `tools/dev/log.ps1` (filtered to hub messages, errors and warnings).
+- Preview the phone app without the game: `tools/dev/preview.ps1` renders the real
+  `PhoneTowRepoHub.vue` with sample data from `tools/dev/preview/states.js` to
+  `.cache/preview/<state>.png` (headless Edge, Vue and Sass from CDNs). The default 350 × 626 px
+  screen matches the RLS phone at 2560 × 1440. Use it for every layout change before deploying;
+  add a state to `states.js` for new screens, and keep the sample payload in step with
+  `towRepoHub_core.getState`.
 - Both scripts look for the BeamNG user folder under `%LOCALAPPDATA%`; pass `-UserFolder`
   if it lives elsewhere (launcher: Manage User Folder → Open in Explorer).
 

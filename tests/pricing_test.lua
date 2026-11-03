@@ -137,10 +137,33 @@ return function(t)
       t.eq(pricing.settle(-500, 100), 0, "negative quote pays nothing")
     end },
 
-    { "custody fine scales with tier and economy only", function()
-      t.eq(pricing.custodyFine(1.0, 1), 1000, "Low")
-      t.eq(pricing.custodyFine(1.8, 1), 1800, "Heavy")
-      t.eq(pricing.custodyFine(1.15, 0.72), 828, "Standard in a weak economy")
+    { "driving within the allowance costs nothing", function()
+      t.eq(pricing.selfDriveShare(0, 5000), 0, "towed")
+      t.eq(pricing.selfDriveShare(200, 5000), 0, "at the allowance")
+      local deduction, xpFactor = pricing.selfDrive(2000, 150, 5000)
+      t.eq(deduction, 0, "no deduction")
+      t.eq(xpFactor, 1, "full XP")
+    end },
+
+    { "driving beyond the allowance cuts pay down to a quarter and XP to zero", function()
+      t.near(pricing.selfDriveShare(2600, 5000), 0.5, 1e-9, "half the route beyond the allowance")
+      local deduction, xpFactor = pricing.selfDrive(2000, 2600, 5000)
+      t.eq(deduction, 750, "three quarters of the quote times half")
+      t.near(xpFactor, 0.5, 1e-9, "half XP")
+      deduction, xpFactor = pricing.selfDrive(2000, 9000, 5000)
+      t.eq(deduction, 1500, "whole route: a quarter of the quote stays")
+      t.eq(xpFactor, 0, "no XP")
+      t.eq(pricing.selfDriveShare(400, 100), 1, "route shorter than the allowance")
+      t.eq(pricing.selfDriveShare(NAN, 5000), 0, "bad distance")
+    end },
+
+    { "custody fine is half the quote, at least the minimum", function()
+      t.eq(pricing.custodyFine(1460), 730, "half the quote")
+      t.eq(pricing.custodyFine(1461), 731, "rounded")
+      t.eq(pricing.custodyFine(300), pricing.config.fineMin, "minimum")
+      t.eq(pricing.custodyFine(NAN), pricing.config.fineMin, "bad quote")
+      local quote = 2400
+      t.eq(pricing.custodyFine(quote), select(2, pricing.settle(quote, 1e9)), "same as the largest damage penalty")
     end },
   }
 end

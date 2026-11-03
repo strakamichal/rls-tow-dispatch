@@ -1,0 +1,90 @@
+<!doctype html>
+<!-- Layout preview of the phone app without the game. tools/dev/preview.ps1 fills in the
+     placeholders and renders each state to a PNG. The phone screen size comes from ?w=&h=
+     (default 350 × 626 CSS px, measured from the RLS phone at 2560 × 1440) with the RLS status bar
+     drawn on top, like the 48 px gap the app leaves for it. -->
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; background: #0b0c0e; }
+  #phone { position: relative; width: 350px; height: 626px; overflow: hidden; background: #15171d; }
+  #status {
+    position: absolute; top: 0; left: 0; right: 0; height: 40px; z-index: 10; pointer-events: none;
+    display: flex; align-items: center; justify-content: space-between; padding: 0 10px;
+    font: 500 15px Overpass, sans-serif; color: #fff;
+    background: linear-gradient(to bottom, rgba(0,0,0,.35), rgba(0,0,0,0));
+  }
+  #status span { padding: 2px 10px; border-radius: 12px; background: rgba(0,0,0,.55); }
+  #status .island { background: #000; color: rgba(255,255,255,.65); font-size: 13px; }
+  #error { color: #ff8a73; font: 13px monospace; white-space: pre-wrap; padding: 60px 12px; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/vue@3.4.21/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vue3-sfc-loader@0.9.5/dist/vue3-sfc-loader.js"></script>
+<script>/*STATES*/</script>
+<script>window.PREVIEW_SFC = /*SFC*/;</script>
+</head>
+<body>
+<div id="phone">
+  <div id="status"><span>9:07 AM</span><span class="island">Tow Dispatch</span><span>$28,272</span></div>
+  <div id="app" style="height:100%"></div>
+</div>
+<script type="module">
+  import * as sass from 'https://esm.sh/sass@1.77.8'
+
+  const params = new URLSearchParams(location.search)
+  const stateName = params.get('state') || 'list'
+  const phone = document.getElementById('phone')
+  if (params.get('w')) phone.style.width = params.get('w') + 'px'
+  if (params.get('h')) phone.style.height = params.get('h') + 'px'
+  const state = window.PREVIEW_STATES[stateName]
+  const clicks = (window.PREVIEW_CLICKS || {})[stateName] || []
+  const sfc = window.PREVIEW_SFC
+  const fail = error => {
+    const box = document.createElement('div')
+    box.id = 'error'
+    box.textContent = 'Preview failed:\n' + (error && (error.stack || error.message) || error)
+    document.getElementById('phone').appendChild(box)
+    document.title = 'error'
+  }
+
+  const options = {
+    moduleCache: { vue: Vue },
+    getFile: async url => {
+      if (url === '/PhoneTowRepoHub.vue') return sfc
+      throw new Error('Unexpected import in the app: ' + url)
+    },
+    addStyle(text) {
+      const style = document.createElement('style')
+      style.textContent = text
+      document.head.appendChild(style)
+    },
+    processStyles(src, lang) {
+      return lang === 'scss' ? sass.compileString(src).css : src
+    },
+    log(type, ...args) { if (type === 'error') fail(args.join(' ')) },
+  }
+
+  // The app polls getState; every other call is a no-op that succeeds.
+  const callLua = async name => name.endsWith('.getState') ? JSON.parse(JSON.stringify(state)) : { ok: true }
+
+  try {
+    const component = await window['vue3-sfc-loader'].loadModule('/PhoneTowRepoHub.vue', options)
+    Vue.createApp({ render: () => Vue.h(component, { callLua }) }).mount('#app')
+    await new Promise(resolve => setTimeout(resolve, 300))
+    for (const selector of clicks) {
+      const element = document.querySelector(selector)
+      if (!element) throw new Error('Nothing to click for ' + selector)
+      element.click()
+      await new Promise(resolve => setTimeout(resolve, 150))
+      element.scrollIntoView({ block: 'start' })
+    }
+    document.title = 'ready'
+  } catch (error) {
+    fail(error)
+  }
+</script>
+</body>
+</html>

@@ -8,7 +8,12 @@ M.config = {
   heavyWeightKg = 3500,
   minPlausibleValue = 500,
   maxPlausibleValue = 10000000,
-  wornChance = 0.3,
+  -- Chance of a tired look (paint and appearance only) on top of the fault.
+  shabbyChance = 0.4,
+  -- Engine integrity for "Failing engine", from an occasional cough (mild) to stalling all the time
+  -- (severe). The game turns lower integrity into misfires and an unstable idle.
+  engineIntegrityMild = 0.5,
+  engineIntegritySevere = 0.3,
   homeChance = 0.5,
 }
 
@@ -24,12 +29,13 @@ M.VALUE_TIERS = {
 }
 M.HEAVY_TIER = "heavyVeh"
 
-M.FAULTS = { "fuel", "flat", "overheat" }
+-- One fault per job, so the player can tell what is wrong with the vehicle.
+M.FAULTS = { "fuel", "flat", "overheat", "engine" }
 M.FAULT_LABELS = {
   fuel = "Nearly empty tank",
   flat = "Flat tyre",
   overheat = "Overheating",
-  worn = "Worn",
+  engine = "Failing engine",
 }
 
 local VEHICLE_TYPES = { Car = true, Truck = true, Bus = true }
@@ -105,6 +111,8 @@ function M.isEligible(info)
   for word in configTypes:gmatch("%S+") do
     if MISSION_CONFIG_TYPES[word] then return false end
   end
+  -- RLS Joe's Junk career configs are not traffic vehicles (RLS repo gives them their own tier).
+  if configTypes:find("joesjunk", 1, true) then return false end
   local value = M.value(info)
   return value ~= nil and value >= M.config.minPlausibleValue and value <= M.config.maxPlausibleValue
 end
@@ -127,24 +135,31 @@ function M.tierLabel(repoLabel)
   return (replaced:gsub("^%s+", ""))
 end
 
--- One drivable fault, sometimes combined with wear. Electric vehicles only get flat tyres.
--- random() returns a number in [0, 1).
-function M.pickFaults(random, electric)
-  local primary
-  if electric then
-    primary = "flat"
-  else
-    primary = M.FAULTS[math.floor(random() * #M.FAULTS) + 1]
-  end
-  local faults = { primary }
-  if random() < M.config.wornChance then faults[#faults + 1] = "worn" end
-  return faults
+function M.isFault(fault)
+  return M.FAULT_LABELS[fault] ~= nil
 end
 
-function M.faultLabel(faults)
-  local labels = {}
-  for _, fault in ipairs(faults or {}) do labels[#labels + 1] = M.FAULT_LABELS[fault] or fault end
-  return table.concat(labels, ", ")
+-- Engine integrity for a "Failing engine" severity in [0, 1] (0 mild, 1 severe), two decimals.
+function M.engineIntegrity(severity)
+  local s = math.max(0, math.min(1, tonumber(severity) or 0))
+  local cfg = M.config
+  local value = cfg.engineIntegrityMild + (cfg.engineIntegritySevere - cfg.engineIntegrityMild) * s
+  return math.floor(value * 100 + 0.5) / 100
+end
+
+-- The vehicle's condition for a tow job: one fault, the engine integrity (only for "engine") and
+-- an optional tired look. Electric vehicles only get flat tyres. random() returns a number in [0, 1).
+function M.pickCondition(random, electric)
+  local fault = electric and "flat" or M.FAULTS[math.floor(random() * #M.FAULTS) + 1]
+  return {
+    fault = fault,
+    engineIntegrity = fault == "engine" and M.engineIntegrity(random()) or nil,
+    shabby = random() < M.config.shabbyChance,
+  }
+end
+
+function M.faultLabel(fault)
+  return M.FAULT_LABELS[fault] or tostring(fault)
 end
 
 -- "home" (an unowned garage) or "service" (a dealership). Heavy vehicles never go to garages.

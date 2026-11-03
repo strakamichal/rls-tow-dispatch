@@ -24,6 +24,14 @@ return function(t)
       t.truthy(not job.isDelivered({ custody = true }, 2, 1.5), "still moving")
     end },
 
+    { "driven distance ignores jitter and jumps", function()
+      t.eq(job.drivenStep(7.5), 7.5, "normal step")
+      t.eq(job.drivenStep(0.2), 0, "jitter")
+      t.eq(job.drivenStep(120), 0, "teleport")
+      t.eq(job.drivenStep(nil), 0, "no position")
+      t.eq(job.drivenStep(0 / 0), 0, "NaN")
+    end },
+
     { "a fine applies only after custody", function()
       t.truthy(not job.endsWithFine({}), "before custody")
       t.truthy(job.endsWithFine({ custody = true }), "in custody")

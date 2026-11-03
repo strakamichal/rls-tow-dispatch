@@ -15,10 +15,35 @@ return function(t)
       t.truthy(next(broken) == nil, "no violations")
     end },
 
-    { "at most two offers of the same tier", function()
-      local offers = { offer("repo", "small", "a", "d1"), offer("tow", "small", "b", "d2") }
-      t.truthy(board.violations(offer("repo", "small", "c", "d3"), offers, BOTH).tier, "third small")
-      t.truthy(not board.violations(offer("repo", "fleet", "c", "d3"), offers, BOTH).tier, "other tier")
+    { "tier shares add up and Joe's Junk counts as Low Value", function()
+      local total = 0
+      for _, share in pairs(board.TIER_SHARES) do total = total + share end
+      t.near(total, 1, 1e-9, "shares sum to 1")
+      t.eq(board.tierBucket("joesJunkVeh"), "junkerVeh", "Joe's Junk bucket")
+      t.eq(board.tierBucket("fleetVeh"), "fleetVeh", "other tiers are their own bucket")
+    end },
+
+    { "pickTier follows the shares and avoids crowded tiers", function()
+      local seen = {}
+      local steps = 400
+      for i = 1, steps do
+        local bucket = board.pickTier({}, function() return (i - 0.5) / steps end)
+        seen[bucket] = (seen[bucket] or 0) + 1
+      end
+      for bucket, share in pairs(board.TIER_SHARES) do
+        t.near(seen[bucket] / steps, share, 0.02, "share of " .. bucket)
+      end
+
+      local crowded = {}
+      for i = 1, 6 do crowded[i] = offer("repo", "junkerVeh", "m" .. i, "d" .. i) end
+      local lowValue = 0
+      for i = 1, steps do
+        if board.pickTier(crowded, function() return (i - 0.5) / steps end) == "junkerVeh" then lowValue = lowValue + 1 end
+      end
+      t.truthy(lowValue / steps < board.TIER_SHARES.junkerVeh / 2, "a crowded tier is picked less")
+
+      t.eq(board.pickTier({}, function() return 0.5 end, { heavyVeh = true }), "heavyVeh", "only available buckets")
+      t.eq(board.pickTier({}, function() return 0.5 end, {}), nil, "nothing available")
     end },
 
     { "no model and no destination twice", function()
@@ -33,9 +58,10 @@ return function(t)
         offer("repo", "a", "m1", "d1"), offer("repo", "b", "m2", "d2"),
         offer("repo", "c", "m3", "d3"), offer("repo", "d", "m4", "d4"),
       }
-      -- Fifth repo would leave one slot for the two tow offers still missing.
-      t.truthy(board.violations(offer("repo", "e", "m5", "d5"), offers, BOTH).jobTypeMix, "fifth repo")
-      t.truthy(not board.violations(offer("tow", "e", "m5", "d5"), offers, BOTH).jobTypeMix, "tow fits")
+      -- On a board planned for 6, a fifth repo would leave one slot for the two tow offers missing.
+      t.truthy(board.violations(offer("repo", "e", "m5", "d5"), offers, BOTH, 6).jobTypeMix, "fifth repo")
+      t.truthy(not board.violations(offer("tow", "e", "m5", "d5"), offers, BOTH, 6).jobTypeMix, "tow fits")
+      t.truthy(not board.violations(offer("repo", "e", "m5", "d5"), offers, BOTH, 10).jobTypeMix, "room on a bigger board")
     end },
 
     { "the type mix does not apply with a single job type", function()
@@ -50,8 +76,8 @@ return function(t)
       t.truthy(not board.fits(sameDestination, offers, { "repo" }, 0), "strict")
       t.truthy(board.fits(sameDestination, offers, { "repo" }, 1), "destination relaxed")
       local sameModel = offer("repo", "fleet", "covet", "d2")
-      t.truthy(not board.fits(sameModel, offers, { "repo" }, 2), "model still enforced")
-      t.truthy(board.fits(sameModel, offers, { "repo" }, 3), "model relaxed")
+      t.truthy(not board.fits(sameModel, offers, { "repo" }, 1), "model still enforced")
+      t.truthy(board.fits(sameModel, offers, { "repo" }, 2), "model relaxed")
     end },
 
     { "pick relaxes until something fits and never loops forever", function()
@@ -78,18 +104,39 @@ return function(t)
       t.eq(open[1].modelKey, "m2", "later one stays")
     end },
 
-    { "a new board fills without waiting, then adds one offer per interval", function()
-      local state = board.newState(0)
-      t.truthy(board.isDue(state, 0), "filling")
-      for i = 1, board.config.size do
+    { "a new board fills to a random starting count without waiting", function()
+      local cfg = board.config
+      t.eq(board.newState(0, function() return 0 end).target, cfg.initialMin, "lowest start")
+      t.eq(board.newState(0, function() return 0.999 end).target, cfg.initialMax, "highest start")
+      local state = board.newState(0, function() return 0 end)
+      for i = 1, cfg.initialMin do
+        t.truthy(board.isDue(state, 0), "filling " .. i)
         state.offers[i] = offer("repo", "t" .. i, "m" .. i, "d" .. i)
-        board.scheduleNext(state, 0, true)
+        board.scheduleNext(state, 0, true, function() return 0 end)
       end
-      t.truthy(not state.filling, "filling ends when full")
-      t.truthy(not board.isDue(state, 100), "full board")
-      table.remove(state.offers)
-      t.truthy(not board.isDue(state, board.config.intervalMin - 0.1), "waits for the interval")
-      t.truthy(board.isDue(state, board.config.intervalMin), "due after the interval")
+      t.truthy(not state.filling, "filling ends at the starting count")
+      t.truthy(not board.isDue(state, cfg.intervalMinMin - 0.1), "waits for the interval")
+      t.truthy(board.isDue(state, cfg.intervalMinMin), "due after the interval")
+    end },
+
+    { "offers keep arriving up to the maximum, faster on a thin board", function()
+      local cfg = board.config
+      local state = board.newState(0)
+      state.filling = false
+      for i = 1, cfg.size do state.offers[i] = offer("repo", "t" .. i, "m" .. i, "d" .. i) end
+      t.truthy(not board.isDue(state, 1000), "full board")
+      state.offers = { offer("repo", "a", "m", "d") }
+      board.scheduleNext(state, 0, true, function() return 0.999 end)
+      t.truthy(state.nextOfferAt < cfg.intervalMaxMin, "thin board refills faster")
+      state.offers = {}
+      for i = 1, cfg.minSize do state.offers[i] = offer("repo", "t" .. i, "m" .. i, "d" .. i) end
+      board.scheduleNext(state, 0, true, function() return 0.999 end)
+      t.near(state.nextOfferAt, cfg.intervalMaxMin, 0.01, "normal interval")
+    end },
+
+    { "each offer gets its own lifetime", function()
+      t.eq(board.ttl(function() return 0 end), board.config.ttlMinMin, "shortest")
+      t.near(board.ttl(function() return 0.999 end), board.config.ttlMaxMin, 0.1, "longest")
     end },
 
     { "a failed attempt stops filling and retries soon", function()

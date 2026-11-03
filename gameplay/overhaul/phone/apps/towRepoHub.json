@@ -1,13 +1,15 @@
 {
   "id": "towRepoHub",
-  "name": "Tow & Repo Hub",
+  "name": "Tow Dispatch",
   "icon": "tow",
+  "iconImage": "/ui/ui-vue/mods/towRepoHub/icon.svg",
+  "iconImageFit": "cover",
   "component": "/ui/ui-vue/mods/towRepoHub/PhoneTowRepoHub.vue",
-  "color": "#2f5d8a",
-  "iconColor": "#ffffff",
+  "color": "#ffb81c",
+  "iconColor": "#15171a",
   "category": "Jobs",
-  "storeTagline": "Towing and repo job board",
-  "storeDescription": "Pick towing and repossession jobs from a board of offers with the payout quoted up front.",
+  "storeTagline": "Towing job board",
+  "storeDescription": "Tow broken-down cars home or to a service. Pick jobs from a board of offers with the payout quoted up front.",
   "defaultPage": 0,
   "defaultPosition": 6
 }

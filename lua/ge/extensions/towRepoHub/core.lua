@@ -1,4 +1,5 @@
--- Tow & Repo Hub game engine entry point (towRepoHub_core).
+-- Tow Dispatch (formerly Tow & Repo Hub) game engine entry point (towRepoHub_core). Internal ids
+-- keep the towRepoHub name so saves and installs stay compatible.
 -- Keeps one offer board per map and answers the phone app. Repo offers only so far (spec step 3).
 -- RLS calls go through guarded lookups: every RLS module used here is internal (docs/rls-integration.md).
 
@@ -7,6 +8,7 @@ local pricing = require("towRepoHub/lib/pricing")
 local board = require("towRepoHub/lib/board")
 local jobRules = require("towRepoHub/lib/job")
 local tow = require("towRepoHub/lib/tow")
+local repoTiers = require("towRepoHub/lib/repoTiers")
 
 local M = {}
 
@@ -25,8 +27,10 @@ local MAX_SPOT_TRIES = 25
 local MAX_ROUTE_TRIES = 3
 local TICK_S = 1
 
--- Job types the board offers.
-local JOB_TYPES = { "tow", "repo" }
+-- Job types the board offers. Repo jobs were dropped: an intact car is simply driven to the
+-- dealership, which the original RLS repo app already covers. The job flow still handles
+-- jobType "repo", so it can come back by generating repo offers again (see git history).
+local JOB_TYPES = { "tow" }
 
 local versionStatus, versionString
 
@@ -39,6 +43,15 @@ local mapCache = {}         -- per-level caches: city spots, eligible vehicles, 
 local routeCache = {}
 local routeLease
 local routedOfferId
+local generationCo          -- coroutine that builds one offer over several frames
+local generationCo_state    -- the board it builds for
+
+-- Hands the frame back while an offer is being generated, so generation never stalls a frame.
+-- Only yields inside our own coroutine; elsewhere (accept, debug tools) it does nothing.
+-- Never call it inside pcall: LuaJIT here cannot yield across it (RLS repo.lua notes the same).
+local function yieldStep()
+  if generationCo and coroutine.running() == generationCo then coroutine.yield() end
+end
 
 -- RLS access ---------------------------------------------------------------------------------------
 
@@ -108,6 +121,7 @@ local function routeDistance(fromPos, toPos)
   end)
   local distance = ok and result and result > 0 and result or straight
   routeCache[key] = distance
+  yieldStep()
   return distance
 end
 
@@ -155,28 +169,15 @@ local function dealerships()
   return list
 end
 
--- Repo candidates per dealership, rebuilt when the skill level changes (it unlocks tiers).
-local function repoCandidatesByDealership(level)
-  local cache = currentMapCache()
-  if cache.repoCandidates and cache.repoLevel == level then return cache.repoCandidates end
-  local pool = getRepoPool()
-  if not pool then return {} end
-  cache.eligibleVehicles = cache.eligibleVehicles or require("util/configListGenerator").getEligibleVehicles(false, false) or {}
-  local byDealership = {}
-  for _, dealership in ipairs(dealerships()) do
-    local spots = overhaul_world_facilities.getParkingSpotsForFacility(dealership) or {}
-    local dropSpots = {}
-    for _, spot in ipairs(spots) do
-      if spot.pos then dropSpots[#dropSpots + 1] = spot end
-    end
-    local candidates = pool.getEligibleRepoVehiclesForDealership(dealership, cache.eligibleVehicles) or {}
-    if #candidates > 0 and #dropSpots > 0 then
-      byDealership[#byDealership + 1] = { dealership = dealership, candidates = candidates, dropSpots = dropSpots }
-    end
+-- RLS repo tier configs (every tier), loaded once; tow and repo offers use the same tier data.
+local repoTierList, repoTierByTag
+local function loadRepoTiers()
+  if not repoTierList then
+    repoTierList = repoTiers.normalize(jsonReadFile(REPO_FILTERS_FILE) or {})
+    repoTierByTag = {}
+    for _, tier in ipairs(repoTierList) do repoTierByTag[tier.unlockTag] = tier end
   end
-  cache.repoCandidates, cache.repoLevel = byDealership, level
-  log("I", LOG_TAG, string.format("%d dealerships with repo candidates at level %d", #byDealership, level))
-  return byDealership
+  return repoTierList, repoTierByTag
 end
 
 local function tierUnlocked(tier, level)
@@ -184,40 +185,6 @@ local function tierUnlocked(tier, level)
   local flag = tier.skillUnlockFlag or tier.unlockFlag
   local flags = overhaul_career_progression_unlockFlags
   return flag ~= nil and flags ~= nil and flags.getFlag(flag) == true
-end
-
--- Tow candidates: common road vehicles in an unlocked value tier, rebuilt when the level changes.
-local function towCandidates(level)
-  local cache = currentMapCache()
-  if cache.towCandidates and cache.towLevel == level then return cache.towCandidates end
-  local pool = getRepoPool()
-  if not pool then return {} end
-  cache.eligibleVehicles = cache.eligibleVehicles or require("util/configListGenerator").getEligibleVehicles(false, false) or {}
-  local candidates = {}
-  local skipped = { noTier = 0, noTierData = 0, locked = 0 }
-  for _, info in ipairs(cache.eligibleVehicles) do
-    local key = tow.tierKey(info)
-    local tier = key and pool.getRepoTagData(key)
-    if not key then
-      skipped.noTier = skipped.noTier + 1
-    elseif not tier then
-      skipped.noTierData = skipped.noTierData + 1
-    elseif not tierUnlocked(tier, level) then
-      skipped.locked = skipped.locked + 1
-    else
-      candidates[#candidates + 1] = { info = info, tierKey = key, tier = tier }
-    end
-  end
-  cache.towCandidates, cache.towLevel = candidates, level
-  log("I", LOG_TAG, string.format("%d tow candidates at level %d of %d vehicles (no tier %d, no tier data %d, locked %d)",
-    #candidates, level, #cache.eligibleVehicles, skipped.noTier, skipped.noTierData, skipped.locked))
-  if #candidates == 0 and cache.eligibleVehicles[1] then
-    local sample = cache.eligibleVehicles[1]
-    log("I", LOG_TAG, string.format("sample vehicle: model %s, Type %s, aggregates.Type %s, Value %s",
-      tostring(sample.model_key), tostring(sample.Type), dumps(sample.aggregates and sample.aggregates.Type),
-      tostring(sample.Value)))
-  end
-  return candidates
 end
 
 local function facilitySpots(facility)
@@ -268,6 +235,39 @@ local function vehicleWeightKg(info)
   return tow.weightKg(info)
 end
 
+local POOL_YIELD_EVERY = 60
+
+local function population(info)
+  return tonumber(info.adjustedPopulation) or tonumber(info.Population) or 1
+end
+
+-- Tow candidates for every tier on this map, unlocked or not, built once per map (over several
+-- frames when called from offer generation). pools[bucket] = { tow = { {info, tierKey, weight} } }.
+local function tierPools()
+  local cache = currentMapCache()
+  if cache.pools then return cache.pools end
+  local _, tierByTag = loadRepoTiers()
+  cache.eligibleVehicles = cache.eligibleVehicles or require("util/configListGenerator").getEligibleVehicles(false, false) or {}
+  local pools = {}
+  for index, info in ipairs(cache.eligibleVehicles) do
+    local tierKey = tow.tierKey(info)
+    if tierKey and tierByTag[tierKey] then
+      local bucket = board.tierBucket(tierKey)
+      pools[bucket] = pools[bucket] or { tow = {} }
+      local list = pools[bucket].tow
+      list[#list + 1] = { info = info, tierKey = tierKey, weight = population(info) }
+    end
+    if index % POOL_YIELD_EVERY == 0 then yieldStep() end
+  end
+
+  cache.pools = pools
+  local parts = {}
+  for bucket, pool in pairs(pools) do parts[#parts + 1] = string.format("%s %d", bucket, #pool.tow) end
+  table.sort(parts)
+  log("I", LOG_TAG, string.format("tow candidates on %s: %s", tostring(cache.levelId), table.concat(parts, ", ")))
+  return pools
+end
+
 local function spotIsFree(spot)
   local reservation = tryRequire("overhaul/lib/parking/reservation")
   local service = reservation and reservation.service
@@ -285,6 +285,16 @@ local debugShortJobs = false
 local DEBUG_MAX_PICKUP_M = 1500
 local DEBUG_MIN_PICKUP_FROM_PLAYER_M = 50
 local DEBUG_MIN_LOADED_ROUTE_M = 100
+
+-- DEBUG, temporary: vehicles offered by the test tow offer panel (debugAddTowOffer).
+local DEBUG_MODELS = {
+  { key = "covet", label = "Ibishu Covet" },
+  { key = "midsize", label = "Ibishu Pessima" },
+  { key = "etk800", label = "ETK 800" },
+  { key = "pickup", label = "Gavril D-Series" },
+  { key = "van", label = "Gavril H-Series" },
+  { key = "fullsize", label = "Gavril Grand Marshal" },
+}
 
 local function pickPickupSpot(state, fromPos, destPos)
   local spots = cityParkingSpots()
@@ -364,33 +374,21 @@ local function buildOffer(state, level, fromPos, jobType, info, tierKey, tier, d
     outboundM = outboundM,
     loadedM = loadedM,
     quote = quote,
+    unlockLevel = tonumber(tier.skillUnlockLevel),
+    unlockFlag = tier.skillUnlockFlag,
     -- Runtime only: the RLS spot and facility objects used on accept.
     runtime = { spot = spot, dropSpot = dropSpot, dropSpots = destination.dropSpots },
   }
 end
 
-local function generateRepoOffer(state, level, fromPos)
-  local byDealership = repoCandidatesByDealership(level)
-  if #byDealership == 0 then return nil end
-  local entry = debugShortJobs and nearestEntry(byDealership, fromPos) or byDealership[math.random(#byDealership)]
-  local pool = getRepoPool()
+local function candidateWeight(candidate) return candidate.weight end
 
-  local info = pool.pickWeightedRepoVehicleInfo(entry.candidates)
-  local tier = info and pool.getRepoTagData(info.repoTag)
-  if not tier or not rollUsedCondition(info) then return nil end
-
-  return buildOffer(state, level, fromPos, "repo", info, info.repoTag, tier,
-    { facility = entry.dealership, dropSpots = entry.dropSpots })
-end
-
-local function generateTowOffer(state, level, fromPos)
-  local candidates = towCandidates(level)
+local function generateTowOffer(state, level, fromPos, candidates)
   if #candidates == 0 then return nil end
-  local candidate = pickWeighted(candidates, function(c)
-    return tonumber(c.info.adjustedPopulation) or tonumber(c.info.Population) or 1
-  end)
+  local candidate = pickWeighted(candidates, candidateWeight)
+  local _, tierByTag = loadRepoTiers()
   local info = deepcopy(candidate.info)
-  if not rollUsedCondition(info) then return nil end
+  if not tierByTag[candidate.tierKey] or not rollUsedCondition(info) then return nil end
 
   local heavy = tow.isHeavy(info)
   local destinations = towDestinations()
@@ -399,36 +397,30 @@ local function generateTowOffer(state, level, fromPos)
   if #list == 0 then return nil end
   local destination = debugShortJobs and nearestEntry(list, fromPos) or list[math.random(#list)]
 
-  local tier = deepcopy(candidate.tier)
+  local tier = deepcopy(tierByTag[candidate.tierKey])
   tier.tierLabel = tow.tierLabel(tier.tierLabel)
   local offer = buildOffer(state, level, fromPos, "tow", info, candidate.tierKey, tier, destination)
   if not offer then return nil end
   offer.destinationKind = kind
-  offer.faults = tow.pickFaults(math.random, tow.isElectric(info))
-  offer.faultLabel = tow.faultLabel(offer.faults)
+  local condition = tow.pickCondition(math.random, tow.isElectric(info))
+  offer.fault = condition.fault
+  offer.engineIntegrity = condition.engineIntegrity
+  offer.shabby = condition.shabby
+  offer.faultLabel = tow.faultLabel(condition.fault)
   return offer
 end
 
--- Prefers a job type still short of the board minimum, otherwise picks one at random.
+-- One offer: a tier picked by its board share (lib/board), then a tow vehicle in that tier.
 local function generateOffer(state, level, fromPos)
-  local counts = {}
-  for _, offer in ipairs(state.offers) do counts[offer.jobType] = (counts[offer.jobType] or 0) + 1 end
-  local short = {}
-  for _, jobType in ipairs(JOB_TYPES) do
-    if (counts[jobType] or 0) < board.config.minPerType then short[#short + 1] = jobType end
+  yieldStep()
+  local pools = tierPools()
+  local available = {}
+  for bucket, pool in pairs(pools) do
+    if #pool.tow > 0 then available[bucket] = true end
   end
-  local pool = #short > 0 and short or JOB_TYPES
-  local first = pool[math.random(#pool)]
-  local generators = { tow = generateTowOffer, repo = generateRepoOffer }
-  local offer = generators[first](state, level, fromPos)
-  if offer then return offer end
-  -- The other type keeps the board filling when one type has nothing to offer.
-  for _, jobType in ipairs(JOB_TYPES) do
-    if jobType ~= first then
-      offer = generators[jobType](state, level, fromPos)
-      if offer then return offer end
-    end
-  end
+  local bucket = board.pickTier(state.offers, math.random, available)
+  if not bucket then return nil end
+  return generateTowOffer(state, level, fromPos, pools[bucket].tow)
 end
 
 local function currentBoard()
@@ -450,13 +442,12 @@ local function addOffer(state)
   if not fromPos then return false end
   local level = skillLevel()
   local started = os.clock()
-  local ok, candidate, relaxed = pcall(board.pick, function() return generateOffer(state, level, fromPos) end,
-    state.offers, JOB_TYPES)
+  local capacity = state.filling and state.target or nil
+  -- Runs inside generationCo and yields between steps, so no pcall here (see yieldStep);
+  -- coroutine.resume catches errors instead.
+  local candidate, relaxed = board.pick(function() return generateOffer(state, level, fromPos) end,
+    state.offers, JOB_TYPES, capacity)
   local elapsedMs = (os.clock() - started) * 1000
-  if not ok then
-    log("E", LOG_TAG, "offer generation failed: " .. tostring(candidate))
-    return false
-  end
   if not candidate then
     log("W", LOG_TAG, string.format("no offer found for the board (%.0f ms)", elapsedMs))
     return false
@@ -464,7 +455,7 @@ local function addOffer(state)
   candidate.id = nextOfferId
   nextOfferId = nextOfferId + 1
   candidate.createdAt = simMinutes
-  candidate.expiresAt = simMinutes + board.config.ttlMin
+  candidate.expiresAt = simMinutes + board.ttl(math.random)
   candidate.liveDistanceM = candidate.outboundM
   candidate.liveFrom = vecToArray(fromPos)
   state.offers[#state.offers + 1] = candidate
@@ -500,8 +491,24 @@ local function tickBoard()
   local open = board.expire(state.offers, simMinutes)
   state.offers = open
   refreshLiveDistance(state)
-  if board.isDue(state, simMinutes) then
-    board.scheduleNext(state, simMinutes, addOffer(state))
+  if not generationCo and board.isDue(state, simMinutes) then
+    generationCo = coroutine.create(function()
+      board.scheduleNext(state, simMinutes, addOffer(state))
+    end)
+    generationCo_state = state
+  end
+end
+
+-- Advances offer generation by one step; called every frame.
+local function stepGeneration()
+  if not generationCo then return end
+  local ok, err = coroutine.resume(generationCo)
+  if not ok then
+    log("E", LOG_TAG, "offer generation failed: " .. tostring(err))
+    if generationCo_state then board.scheduleNext(generationCo_state, simMinutes, false) end
+  end
+  if not ok or coroutine.status(generationCo) == "dead" then
+    generationCo, generationCo_state = nil, nil
   end
 end
 
@@ -628,10 +635,10 @@ local function payout(spec, category)
 end
 
 local function chargeFine(job, reason)
-  local fine = pricing.custodyFine(job.tierMultiplier, economy("repo"))
+  local fine = pricing.custodyFine(job.quote)
   local ok, problem = payout({
     amount = -fine,
-    label = string.format("Tow & Repo Hub fine: %s (%s)", reason, vehicleLabel(job)),
+    label = string.format("Tow Dispatch fine: %s (%s)", reason, vehicleLabel(job)),
     tags = { "towRepoHub", "fine" },
     allowNetDebit = true,
   }, "fine")
@@ -665,6 +672,24 @@ local function partValueLookup(vehicleId)
   end
 end
 
+-- The Recovery skill level and how far it is to the next one, for the completion screen.
+-- getBranchLevel returns level, progress, neededForNext, prevThreshold, nextThreshold.
+local function skillProgress()
+  local skills = overhaul_career_progression_skills
+  local attributes = overhaul_career_economy_playerAttributes
+  if not (skills and skills.getBranchLevel and attributes and attributes.getAttributeValue) then return nil end
+  local ok, level, _, _, previous, nextAt = pcall(skills.getBranchLevel, SKILL_PATH_IDS[1])
+  level, previous, nextAt = tonumber(level), tonumber(previous), tonumber(nextAt)
+  if not ok or not level then return nil end
+  local value = tonumber(attributes.getAttributeValue(SKILL_ATTRIBUTE)) or 0
+  local result = { level = level }
+  if previous and nextAt and nextAt > previous then
+    result.fraction = math.max(0, math.min(1, (value - previous) / (nextAt - previous)))
+    result.toNext = math.max(0, math.ceil(nextAt - value))
+  end
+  return result
+end
+
 local function scaledXp(xp)
   local rewardData = { [SKILL_ATTRIBUTE] = { amount = xp } }
   local difficulty = overhaul_career_economy_difficultyMode
@@ -677,13 +702,19 @@ end
 local function completeJob(job, finalConditions)
   local damageValue = jobRules.damage(job.baseline, finalConditions, partValueLookup(job.vehicleId))
   local paid, penalty = pricing.settle(job.quote, damageValue)
+  local notTowed, xpFactor = pricing.selfDrive(job.quote, job.drivenM, job.loadedM)
+  paid = math.max(0, paid - notTowed)
   local xp = scaledXp(pricing.xp({ tierBaseXp = job.tierBaseXp, loadedKm = job.loadedM / 1000, jobType = job.jobType }))
-  local label = string.format("Tow & Repo Hub: delivered the %s to %s", vehicleLabel(job), job.destinationName)
+  xp = math.floor(xp * xpFactor + 0.5)
+  local label = string.format("Tow Dispatch: delivered the %s to %s", vehicleLabel(job), job.destinationName)
 
-  local spec = { amount = paid, label = label, tags = { "gameplay", "reward", "repo", "recovery", "towRepoHub" },
+  -- Listed in Wallet as work income from recovery, like Off-Road Recovery. No "repo" tag: that
+  -- tag ties the payout to the RLS repo demand (activity heat).
+  local spec = { amount = paid, label = label, tags = { "gameplay", "reward", "recovery", "towRepoHub" },
     fullReward = true }
   if xp > 0 then spec.xp = { [SKILL_ATTRIBUTE] = xp } end
-  local ok, problem = payout(spec, "activity:repo")
+  local levelBefore = skillLevel()
+  local ok, problem = payout(spec, "activity:recovery")
   if not ok then
     log("W", LOG_TAG, "payout refused: " .. tostring(problem))
   elseif recordJob then
@@ -693,12 +724,26 @@ local function completeJob(job, finalConditions)
   lastCompletion = {
     vehicle = { brand = job.brand, name = job.name, year = job.year },
     destinationName = job.destinationName,
-    quote = job.quote, penalty = penalty, paid = paid, xp = xp,
+    quote = job.quote, penalty = penalty, notTowed = notTowed, drivenM = job.drivenM or 0, paid = paid, xp = xp,
+    skill = skillProgress(),
   }
-  log("I", LOG_TAG, string.format("job delivered: quote %d, damage %.0f, penalty %d, paid %d, xp %d",
-    job.quote, damageValue, penalty, paid, xp))
-  ui_message(string.format("Delivered the %s.\nPaid $%d (quote $%d, damage −$%d), %d Recovery XP.",
-    vehicleLabel(job), paid, job.quote, penalty, xp), 10, LOG_TAG, "info")
+  -- Level up, and the tow tiers that unlocked with it, for the completion screen.
+  local levelAfter = skillLevel()
+  if levelAfter > levelBefore then
+    lastCompletion.levelUp = { from = levelBefore, to = levelAfter }
+    lastCompletion.unlocked = {}
+    for _, tier in ipairs((loadRepoTiers())) do
+      local unlockAt = tonumber(tier.skillUnlockLevel)
+      if board.TIER_SHARES[tier.unlockTag] and unlockAt and unlockAt > levelBefore and unlockAt <= levelAfter then
+        lastCompletion.unlocked[#lastCompletion.unlocked + 1] = tow.tierLabel(tier.tierLabel)
+      end
+    end
+    log("I", LOG_TAG, string.format("level up %d -> %d, unlocked %d tiers", levelBefore, levelAfter, #lastCompletion.unlocked))
+  end
+  log("I", LOG_TAG, string.format("job delivered: quote %d, damage %.0f, penalty %d, driven %.0f m, not towed %d, paid %d, xp %d",
+    job.quote, damageValue, penalty, job.drivenM or 0, notTowed, paid, xp))
+  ui_message(string.format("Delivered the %s.\nPaid $%d of the $%d quote, %d Recovery XP.",
+    vehicleLabel(job), paid, job.quote, xp), 10, LOG_TAG, "info")
   endJob(job)
   if overhaul_career_saveSystem and overhaul_career_saveSystem.saveCurrent then
     pcall(overhaul_career_saveSystem.saveCurrent)
@@ -708,6 +753,27 @@ end
 local function requestPartConditions(vehicle, callback)
   if not core_vehicleBridge then callback(nil); return end
   core_vehicleBridge.requestValue(vehicle, function(res) callback(res and res.result) end, "getPartConditions")
+end
+
+-- Overheating fault, when the player arrives: the engine has just overheated and stopped, so it is
+-- hot but below the game's damage thresholds (block 140, oil 150, cylinder walls 160 °C).
+local OVERHEAT_ARRIVAL_TEMPERATURE_C = 125
+local VLUA_HOT_ENGINE = [[
+for _, engine in ipairs(powertrain.getDevicesByCategory("engine") or {}) do
+  local thermals = engine.thermals
+  if thermals and thermals.engineBlockTemperature then
+    thermals.engineBlockTemperature = %f
+    thermals.cylinderWallTemperature = %f
+    thermals.oilTemperature = %f
+    if thermals.coolantTemperature then thermals.coolantTemperature = %f end
+  end
+end
+log("I", "towRepoHub", "engine heated to %.0f C")
+]]
+
+local function heatEngine(vehicle)
+  local t = OVERHEAT_ARRIVAL_TEMPERATURE_C
+  vehicle:queueLuaCommand(string.format(VLUA_HOT_ENGINE, t, t, t, t, t))
 end
 
 local function prepareTargetForPickup(job, vehicle)
@@ -720,6 +786,33 @@ local function prepareTargetForPickup(job, vehicle)
     end)
   end
   vehicle:queueLuaCommand('input.event("parkingbrake", 1, "FILTER_DI", nil, nil, nil, nil)')
+  if job.fault == "overheat" then heatEngine(vehicle) end
+end
+
+-- Tow jobs pay for towing: metres the player drives the target themselves are counted, and beyond
+-- the allowance they cut the pay (lib/pricing selfDrive). Riding on a bed or a rope does not count:
+-- the player sits in the tow vehicle then. The player is told when they first get in and when the
+-- allowance runs out.
+local function trackSelfDrive(job, targetPos)
+  local inTarget = be:getPlayerVehicleID(0) == job.vehicleId
+  if inTarget and job.lastTargetPos then
+    job.drivenM = (job.drivenM or 0) + jobRules.drivenStep(targetPos:distance(arrayToVec(job.lastTargetPos)))
+  end
+  job.lastTargetPos = vecToArray(targetPos)
+  if not inTarget then return end
+
+  local allowance = pricing.config.selfDriveAllowanceM
+  if not job.selfDriveWarned then
+    job.selfDriveWarned = true
+    ui_message(string.format("Tow jobs pay for towing.\nDrive this car yourself only to load it: after %d m the pay drops.",
+      allowance), 8, LOG_TAG, "warning")
+  end
+  if (job.drivenM or 0) > allowance and not job.selfDriveOverWarned then
+    job.selfDriveOverWarned = true
+    ui_message("You have driven this car more than the free distance.\nThe pay drops the further you drive it; tow it instead.",
+      8, LOG_TAG, "warning")
+    log("I", LOG_TAG, "self-drive allowance used up")
+  end
 end
 
 local function updateJob()
@@ -730,6 +823,7 @@ local function updateJob()
   if not vehicle then failJob(job, "lost"); return end
 
   local targetPos = vehicle:getPosition()
+  trackSelfDrive(job, targetPos)
   local playerPos = playerPosition()
   if playerPos and jobRules.needsBaseline(job, playerPos:distance(targetPos)) then
     job.baselineRequested = true
@@ -787,18 +881,13 @@ end
 -- so the fault itself is never charged as damage. Vehicle Lua logs what it did under "towRepoHub".
 local FAULT_FUEL_LITRES = 0.08
 local JOULES_PER_LITRE = { gasoline = 31.125e6, diesel = 36.112e6, kerosine = 34.4e6 }
-local WORN_EXTRA_MILEAGE_M = 150000000
-local WORN_VISUAL = 0.55
--- Radiator integrity for the overheating fault. The game's radiator condition maps it to a leak
--- and a coolant level: 0.15 leaves about a quarter of the coolant, so the engine overheats soon.
-local OVERHEAT_RADIATOR_INTEGRITY = 0.15
-
-local function hasFault(job, fault)
-  for _, f in ipairs(job.faults or {}) do
-    if f == fault then return true end
-  end
-  return false
-end
+-- Appearance of a shabby vehicle (paint and visual condition only).
+local SHABBY_VISUAL = 0.55
+-- Overheating fault: a broken radiator (full leak damage) with practically no coolant left, so
+-- the engine overheats as soon as it runs. Passed as the radiator's integrity state
+-- (combustionEngineThermals). Not exactly 0: the game divides by the coolant mass.
+local OVERHEAT_RADIATOR_DAMAGE = 0.1
+local OVERHEAT_COOLANT_KG = 0.05
 
 local function applyFuelFault(vehicle)
   core_vehicleBridge.requestValue(vehicle, function(response)
@@ -825,17 +914,33 @@ local VLUA_OVERHEAT = [[
 local applied = 0
 for _, engine in ipairs(powertrain.getDevicesByCategory("engine") or {}) do
   if engine.thermals and engine.thermals.setPartConditionRadiator then
-    engine.thermals.setPartConditionRadiator(0, %f, 1)
+    engine.thermals.setPartConditionRadiator(0, { radiatorDamage = %f, coolantMass = %f }, 1)
     applied = applied + 1
   end
 end
 log(applied > 0 and "I" or "W", "towRepoHub", "fault applied: overheating on " .. applied .. " engine(s)")
 ]]
 
-local function applyFaults(job, vehicle)
-  if hasFault(job, "fuel") then applyFuelFault(vehicle) end
-  if hasFault(job, "flat") then vehicle:queueLuaCommand(VLUA_FLAT) end
-  if hasFault(job, "overheat") then vehicle:queueLuaCommand(string.format(VLUA_OVERHEAT, OVERHEAT_RADIATOR_INTEGRITY)) end
+-- Engine integrity drives misfires and idle stability (combustionEngine setPartCondition).
+local VLUA_ENGINE = [[
+local applied = 0
+for _, engine in ipairs(powertrain.getDevicesByCategory("engine") or {}) do
+  if engine.setPartCondition then
+    engine:setPartCondition(nil, %f, %f, 1)
+    applied = applied + 1
+  end
+end
+log(applied > 0 and "I" or "W", "towRepoHub", "fault applied: failing engine, integrity %.2f on " .. applied .. " engine(s)")
+]]
+
+local function applyFault(job, vehicle)
+  if job.fault == "fuel" then applyFuelFault(vehicle) end
+  if job.fault == "flat" then vehicle:queueLuaCommand(VLUA_FLAT) end
+  if job.fault == "overheat" then vehicle:queueLuaCommand(string.format(VLUA_OVERHEAT, OVERHEAT_RADIATOR_DAMAGE, OVERHEAT_COOLANT_KG)) end
+  if job.fault == "engine" then
+    local integrity = tonumber(job.engineIntegrity) or tow.engineIntegrity(0.5)
+    vehicle:queueLuaCommand(string.format(VLUA_ENGINE, tonumber(job.mileage) or 0, integrity, integrity))
+  end
 end
 
 local function spawnTarget(job, spot)
@@ -845,30 +950,33 @@ local function spawnTarget(job, spot)
     electrics = { parkingbrake = 0 },
   })
   -- A fresh spawn has no part conditions; without them the baseline request returns nothing.
-  -- Worn tow vehicles get extra mileage and a tired look.
+  -- A shabby vehicle gets a lower visual condition only.
   if vehicle and core_vehicleBridge then
-    local mileage = tonumber(job.mileage) or 0
-    if hasFault(job, "worn") then
-      pcall(core_vehicleBridge.executeAction, vehicle, "ensurePartConditionsInit",
-        mileage + WORN_EXTRA_MILEAGE_M, 1, WORN_VISUAL)
-      log("I", LOG_TAG, "fault applied: worn")
-    else
-      pcall(core_vehicleBridge.executeAction, vehicle, "ensurePartConditionsInit", mileage, 1, 1)
-    end
+    local visual = job.shabby and SHABBY_VISUAL or 1
+    pcall(core_vehicleBridge.executeAction, vehicle, "ensurePartConditionsInit", tonumber(job.mileage) or 0, 1, visual)
+    if job.shabby then log("I", LOG_TAG, "shabby look applied") end
   end
   if vehicle and job.jobType == "tow" then
-    local ok, err = pcall(applyFaults, job, vehicle)
-    if not ok then log("W", LOG_TAG, "applying faults failed: " .. tostring(err)) end
+    local ok, err = pcall(applyFault, job, vehicle)
+    if not ok then log("W", LOG_TAG, "applying the fault failed: " .. tostring(err)) end
   end
   return vehicle
 end
 
 -- Called by the phone app. Returns {ok, reason}.
+-- The board shows offers of every tier; those above the player's Recovery level are locked.
+local function offerLocked(offer, level)
+  return not tierUnlocked({ skillUnlockLevel = offer.unlockLevel, skillUnlockFlag = offer.unlockFlag }, level)
+end
+
 local function acceptOffer(id)
   if activeJob then return { ok = false, reason = "Finish or cancel your active job first." } end
   if boardDisabledReason() then return { ok = false, reason = boardDisabledReason() } end
   local offer = findOffer(id)
   if not offer or not offer.runtime then return { ok = false, reason = "This offer is no longer available." } end
+  if offerLocked(offer, skillLevel()) then
+    return { ok = false, reason = string.format("This job unlocks at Recovery level %d.", offer.unlockLevel or 0) }
+  end
 
   local service = reservationService()
   local token = service and service.makeReservationToken(LOG_TAG) or LOG_TAG
@@ -919,8 +1027,8 @@ local function acceptOffer(id)
   local story = job.jobType == "tow"
     and string.format("Tow job accepted: %s (%s).", vehicleLabel(job), job.faultLabel or "broken down")
     or string.format("Repo job accepted: %s.", vehicleLabel(job))
-  ui_message(string.format("%s\nPick it up and deliver it to %s for $%d.", story, job.destinationName, job.quote),
-    8, LOG_TAG, "info")
+  ui_message(string.format("%s\nTow it to %s for $%d. Driving it yourself is free only for the first %d m.",
+    story, job.destinationName, job.quote, pricing.config.selfDriveAllowanceM), 10, LOG_TAG, "info")
   log("I", LOG_TAG, string.format("job accepted: offer %d, vehicle %d", offer.id, job.vehicleId))
   return { ok = true }
 end
@@ -959,12 +1067,19 @@ local function activeJobView(job)
     vehicle = { brand = job.brand, name = job.name, year = job.year },
     destinationName = job.destinationName,
     destinationKind = job.destinationKind,
+    fault = job.fault,
     faultLabel = job.faultLabel,
+    weightKg = job.weightKg,
+    loadedM = job.loadedM,
     quote = job.quote,
+    xp = scaledXp(pricing.xp({ tierBaseXp = job.tierBaseXp, loadedKm = job.loadedM / 1000, jobType = job.jobType })),
+    drivenM = job.drivenM or 0,
+    driveAllowanceM = pricing.config.selfDriveAllowanceM,
+    notTowedSoFar = (pricing.selfDrive(job.quote, job.drivenM, job.loadedM)),
     custody = job.custody,
     phase = job.completing and "completing" or (job.custody and "delivery" or "pickup"),
     distanceToNextM = from and from:distance(nextStop) or nil,
-    cancelFine = jobRules.endsWithFine(job) and pricing.custodyFine(job.tierMultiplier, economy("repo")) or 0,
+    cancelFine = jobRules.endsWithFine(job) and pricing.custodyFine(job.quote) or 0,
     otherMap = job.mapId ~= levelId(),
   }
 end
@@ -973,8 +1088,10 @@ end
 
 -- distanceToVehicleM follows the player (refreshLiveDistance); outboundM and loadedM are the
 -- routes the fixed quote was made from.
-local function offerView(offer)
+local function offerView(offer, level)
   return {
+    locked = offerLocked(offer, level),
+    unlockLevel = offer.unlockLevel,
     id = offer.id,
     jobType = offer.jobType,
     tierTag = offer.tierTag,
@@ -986,8 +1103,10 @@ local function offerView(offer)
     loadedM = offer.loadedM,
     destinationName = offer.destinationName,
     destinationKind = offer.destinationKind,
+    fault = offer.fault,
     faultLabel = offer.faultLabel,
     quote = offer.quote,
+    xp = scaledXp(pricing.xp({ tierBaseXp = offer.tierBaseXp, loadedKm = offer.loadedM / 1000, jobType = offer.jobType })),
     expiresInS = math.max(0, (offer.expiresAt - simMinutes) * 60),
     routed = offer.id == routedOfferId and routeLease ~= nil and routeLease.isCurrent(),
   }
@@ -1005,17 +1124,28 @@ local function getState()
     disabledReason = boardDisabledReason(),
     skillLevel = level,
     skillBonus = pricing.repoSkillBonus(level),
+    skill = careerActive() and skillProgress() or nil,
     boardSize = board.config.size,
     offers = {},
     activeJob = activeJob and activeJobView(activeJob) or nil,
     lastCompletion = lastCompletion,
     debugShortJobs = debugShortJobs,
+    debugModels = DEBUG_MODELS,
+    debugFaults = tow.FAULTS,
   }
   local current = not state.disabledReason and currentBoard() or nil
   if current then
-    for _, offer in ipairs(current.offers) do state.offers[#state.offers + 1] = offerView(offer) end
+    for _, offer in ipairs(current.offers) do state.offers[#state.offers + 1] = offerView(offer, level) end
     state.filling = current.filling
-    state.nextOfferInS = #current.offers < board.config.size and math.max(0, (current.nextOfferAt - simMinutes) * 60) or nil
+  end
+  -- The next tier the player unlocks, for the app header.
+  local tiers = loadRepoTiers()
+  for _, tier in ipairs(tiers) do
+    local unlockAt = tonumber(tier.skillUnlockLevel)
+    if unlockAt and not tierUnlocked(tier, level)
+      and (not state.nextUnlock or unlockAt < state.nextUnlock.level) then
+      state.nextUnlock = { level = unlockAt, label = tier.tierLabel }
+    end
   end
   return state
 end
@@ -1041,14 +1171,101 @@ local function resetBoard()
 end
 
 -- Replaces every offer on the current board; recently used spots stay excluded.
+-- DEBUG, temporary: players may not reroll the board (spec: Problem).
 local function refreshOffers()
   local state = currentBoard()
   if not state then return false end
-  state.offers = {}
-  state.filling = true
+  local fresh = board.newState(simMinutes)
+  state.offers, state.filling, state.target, state.nextOfferAt = {}, true, fresh.target, fresh.nextOfferAt
   routedOfferId = nil
   log("I", LOG_TAG, "offers refreshed")
   return true
+end
+
+-- DEBUG, temporary: test tow offers for a chosen vehicle and fault, placed near the player.
+-- Console: towRepoHub_core.debugAddTowOffer("covet", "engine", 0.5)
+local function debugAddTowOffer(modelKey, fault, severity)
+  if not tow.isFault(fault) then return { ok = false, reason = "Unknown fault: " .. tostring(fault) } end
+  local state, fromPos, pool = currentBoard(), playerPosition(), getRepoPool()
+  if not (state and fromPos and pool) then return { ok = false, reason = "No board, player or RLS data." } end
+  local cache = currentMapCache()
+  cache.eligibleVehicles = cache.eligibleVehicles or require("util/configListGenerator").getEligibleVehicles(false, false) or {}
+  local matches = {}
+  for _, info in ipairs(cache.eligibleVehicles) do
+    if info.model_key == modelKey and tow.tierKey(info) then matches[#matches + 1] = info end
+  end
+  if #matches == 0 then return { ok = false, reason = "No tow configuration for " .. tostring(modelKey) .. "." } end
+
+  local info = deepcopy(matches[math.random(#matches)])
+  rollUsedCondition(info)
+  local tierKey = tow.tierKey(info)
+  local _, tierByTag = loadRepoTiers()
+  if not tierByTag[tierKey] then return { ok = false, reason = "No tier data for " .. tostring(tierKey) .. "." } end
+  local tier = deepcopy(tierByTag[tierKey])
+  tier.tierLabel = tow.tierLabel(tier.tierLabel)
+  local destinations = towDestinations()
+  local kind = tow.destinationKind(math.random, tow.isHeavy(info), #destinations.home > 0)
+  if #destinations[kind] == 0 then return { ok = false, reason = "No destination on this map." } end
+
+  local previous = debugShortJobs
+  debugShortJobs = true
+  local ok, offer = pcall(buildOffer, state, skillLevel(), fromPos, "tow", info, tierKey, tier,
+    nearestEntry(destinations[kind], fromPos))
+  debugShortJobs = previous
+  if not ok then return { ok = false, reason = tostring(offer) } end
+  if not offer then return { ok = false, reason = "No free parking spot near you." } end
+
+  offer.destinationKind = kind
+  offer.fault = fault
+  offer.engineIntegrity = fault == "engine" and tow.engineIntegrity(tonumber(severity) or 0.5) or nil
+  offer.shabby = false
+  offer.faultLabel = tow.faultLabel(fault)
+    .. (offer.engineIntegrity and string.format(" (integrity %.2f)", offer.engineIntegrity) or "")
+  offer.id = nextOfferId
+  nextOfferId = nextOfferId + 1
+  offer.createdAt = simMinutes
+  offer.expiresAt = simMinutes + board.ttl(math.random)
+  offer.liveDistanceM = offer.outboundM
+  offer.liveFrom = vecToArray(fromPos)
+  if #state.offers >= board.config.size then table.remove(state.offers) end
+  table.insert(state.offers, 1, offer)
+  log("I", LOG_TAG, string.format("debug offer %d: %s %s [%s] -> %s", offer.id, tostring(offer.brand),
+    tostring(offer.name), offer.faultLabel, offer.destinationName))
+  return { ok = true }
+end
+
+-- DEBUG, temporary: moves the player to the road next to a position, facing it. The vehicle is
+-- not reset, so a trailer and its load stay as they are.
+local function debugTeleportNear(pos)
+  local vehicle = be:getPlayerVehicle(0)
+  if not vehicle then return false end
+  local target = pos
+  local ok, _, nodeA, nodeB = pcall(map.findClosestRoad, pos)
+  local nodes = ok and nodeA and map.getMap().nodes or nil
+  if nodes and nodes[nodeA] then
+    local a, b = nodes[nodeA].pos, nodes[nodeB] and nodes[nodeB].pos
+    target = (b and b:distance(pos) < a:distance(pos)) and b or a
+  end
+  local dir = pos - target
+  dir.z = 0
+  local rot = dir:length() > 0.5 and quatFromDir(dir:normalized(), vec3(0, 0, 1)) or nil
+  spawn.safeTeleport(vehicle, target + vec3(0, 0, 0.5), rot, nil, nil, nil, nil, false)
+  return true
+end
+
+-- DEBUG, temporary: teleports to an offer's vehicle, or with no id to the active job's next stop.
+local function debugTeleport(id)
+  local pos
+  if id then
+    local offer = findOffer(id)
+    pos = offer and arrayToVec(offer.pickupPos)
+  elseif activeJob then
+    pos = arrayToVec(activeJob.custody and activeJob.dropPos or activeJob.pickupPos)
+  end
+  if not pos then return false end
+  local ok, err = pcall(debugTeleportNear, pos)
+  if not ok then log("W", LOG_TAG, "debug teleport failed: " .. tostring(err)) end
+  return ok and err
 end
 
 -- DEBUG, temporary: see debugShortJobs.
@@ -1066,7 +1283,7 @@ local function onExtensionLoaded()
   local logbookFeed = tryRequire("overhaul/lib/progression/logbookFeed")
   if logbookFeed then
     recordJob = logbookFeed.register(LOGBOOK_ID,
-      { title = "Tow & Repo Hub job completed", label = "Jobs", icon = "carCoins" }, "towRepoHub/core.lua")
+      { title = "Tow job completed", label = "Jobs", icon = "carCoins" }, "towRepoHub/core.lua")
   end
   log("I", LOG_TAG, "loaded")
 end
@@ -1085,10 +1302,12 @@ local function onUpdate(dtReal, dtSim)
     local ok, err = pcall(updateJob)
     if not ok then log("E", LOG_TAG, "job update failed: " .. tostring(err)) end
   end
+  stepGeneration()
   tickTimer = tickTimer + dt
   if tickTimer < TICK_S then return end
   tickTimer = 0
-  tickBoard()
+  local ok, err = pcall(tickBoard)
+  if not ok then log("E", LOG_TAG, "board update failed: " .. tostring(err)) end
 end
 
 local function onVehicleDestroyed(vehicleId)
@@ -1106,6 +1325,7 @@ local function onClientEndMission()
     activeJob.vehicleId = nil
     endJob(activeJob)
   end
+  generationCo, generationCo_state = nil, nil
   mapCache = {}
   routeCache = {}
 end
@@ -1114,6 +1334,7 @@ local function onOverhaulActive(active)
   if not active then
     if activeJob then endJob(activeJob) end
     lastCompletion = nil
+    generationCo, generationCo_state = nil, nil
     boards = {}
     mapCache = {}
     routeCache = {}
@@ -1129,6 +1350,8 @@ M.clearCompletion = clearCompletion
 M.resetBoard = resetBoard
 M.refreshOffers = refreshOffers
 M.setDebugShortJobs = setDebugShortJobs
+M.debugAddTowOffer = debugAddTowOffer
+M.debugTeleport = debugTeleport
 M.onExtensionUnloaded = onExtensionUnloaded
 M.onVehicleDestroyed = onVehicleDestroyed
 M.onExtensionLoaded = onExtensionLoaded

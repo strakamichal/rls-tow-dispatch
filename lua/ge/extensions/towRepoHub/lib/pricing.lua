@@ -10,7 +10,13 @@ M.config = {
   jobTypeFactor = { tow = 1.1, repo = 1.0 },
   recoveryCapShare = 0.9,
   maxPenaltyShare = 0.5,
-  fineBase = 1000,
+  fineShare = 0.5,
+  fineMin = 200,
+  -- Driving the vehicle yourself: free up to selfDriveAllowanceM (to get it onto the truck);
+  -- beyond that the pay drops in proportion, down to selfDriveMinPayShare and no XP when the
+  -- whole loaded route was driven.
+  selfDriveAllowanceM = 200,
+  selfDriveMinPayShare = 0.25,
 }
 
 -- Off-Road Recovery reference values from RLS 2.8 jobs/recovery/rewards.lua.
@@ -149,8 +155,30 @@ function M.settle(quote, damagePenalty)
 end
 
 -- Fixed fine for abandoning or losing a vehicle in custody.
-function M.custodyFine(tierMultiplier, economy)
-  return round(M.config.fineBase * tierMultiplierOf(tierMultiplier) * economyOf(economy))
+-- How much of the job was driven instead of towed, 0..1: metres driven beyond the allowance over
+-- the loaded route beyond the allowance.
+function M.selfDriveShare(drivenM, loadedM)
+  local allowance = M.config.selfDriveAllowanceM
+  local over = math.max(0, finite(drivenM, 0) - allowance)
+  if over <= 0 then return 0 end
+  local route = math.max(1, finite(loadedM, 0) - allowance)
+  return clamp(over / route, 0, 1)
+end
+
+-- Pay taken for driving instead of towing, and the factor for XP. Returns deduction, xpFactor.
+function M.selfDrive(quote, drivenM, loadedM)
+  local share = M.selfDriveShare(drivenM, loadedM)
+  quote = math.max(0, finite(quote, 0))
+  local deduction = round(quote * (1 - M.config.selfDriveMinPayShare) * share)
+  return deduction, 1 - share
+end
+
+-- The fine is half the job's quote (the same as the largest damage penalty, so cancelling never
+-- beats delivering a damaged vehicle), at least fineMin. The quote already carries the tier,
+-- the distances and the economy.
+function M.custodyFine(quote)
+  local cfg = M.config
+  return math.max(cfg.fineMin, round(math.max(0, finite(quote, 0)) * cfg.fineShare))
 end
 
 return M

@@ -1,4 +1,4 @@
-# Tow & Repo Hub — specification
+# Tow Dispatch (formerly Tow & Repo Hub) — specification
 
 Status: **draft, awaiting approval**.
 Targets: BeamNG.drive 0.40, RLS Career Overhaul 2.8.0.
@@ -25,7 +25,13 @@ the sense of "my car broke down, take it home or to a garage".
 
 ### Job types
 
-| | Tow | Repo |
+**Decision (2026-11-03): the board offers tow jobs only.** A repo vehicle is intact, so the
+player simply drives it to the dealership: there is nothing for a tow truck to do, and the
+original RLS repo app already covers that work. The repo job flow stays in the code
+(`jobType = "repo"`) but no repo offers are generated. The repo column below documents what
+existed; tow jobs keep the ×1.1 factor.
+
+| | Tow | Repo (not offered) |
 |---|---|---|
 | Story | The owner's car broke down; take it home or to a service | The owner missed payments; return the car to the lender |
 | Vehicle | Any common traffic vehicle on the map | A vehicle sold by the destination dealership (as RLS repo) |
@@ -35,13 +41,25 @@ the sense of "my car broke down, take it home or to a garage".
 
 ### Board
 
-- Shows **6 offers**, mixed Tow and Repo, on a per-map board.
-- A new offer arrives about every **3 in-game minutes** until the board is full.
-- An offer expires after about **20 in-game minutes**. An accepted job never expires.
+- A per-map board of tow jobs **of every tier**, whatever the player's level. Its
+  size varies: a new board starts with **10–14 jobs**, then a new job arrives every
+  **1–3 in-game minutes** (twice as fast below 8), up to **14**.
+- Tiers appear in about these shares: Low Value 30 %, Budget 25 %, Standard 20 %,
+  Luxury 12 %, Exotic 6 %, Heavy 7 % (RLS Joe's Junk repo counts as Low Value). A tier the
+  board already has many of is picked less often.
+- Jobs above the player's Recovery level are **locked**: the app lists them apart, with the
+  payout and the level that unlocks them, but they cannot be accepted. The header shows the
+  next tier to unlock. So the higher the level, the more of the board the player can take.
+- Each job expires after its own random **12–30 in-game minutes**, so jobs leave the
+  board at different times. An accepted job never expires.
+- The board cannot be rerolled: new jobs only come with time.
 - **One active job** at a time.
 - The target vehicle is spawned **only when an offer is accepted**; offers are data.
-- Diversity rules when filling the board: at least 2 of each job type, at most 2 offers
-  of the same tier, no vehicle model twice, no destination twice. If no offer fits after
+- Diversity rules when filling the board: no vehicle model twice, no destination twice
+  (and, while both job types were offered, at least 2 of each).
+- Offer generation runs over several frames (a coroutine that yields after each route
+  query), and the vehicle candidates of every tier are built once per map, so the board
+  never stalls a frame. If no offer fits after
   a number of attempts, the rules are relaxed so the board never stays empty.
 
 Each offer shows: job type, tier, vehicle, weight, fault (Tow), distance from the
@@ -74,7 +92,9 @@ the vehicle. A **Route** button sets navigation to the active job's next stop.
 The tier definitions are read at runtime from RLS `gameplay/overhaul/repo/repoVehicleFilters.json`
 (unlock level, pay multiplier, base XP), so RLS changes carry over.
 
-- Repo: vehicle selection exactly as RLS repo.
+- Repo: vehicle selection as RLS repo (dealership filters, the highest-priority matching
+  tier), but for every tier: RLS only hands out unlocked tiers, so the hub classifies
+  vehicles itself with the same rules (`lib/repoTiers.lua`).
 - Tow: classified by vehicle value only (no brand or config-type restriction), using the
   RLS value bands: Low Value < 25 000, Budget 25–50 k, Standard 50–100 k,
   Luxury 100–200 k, Exotic > 200 k. **Heavy** = weight > 3.5 t or type Truck/Bus.
@@ -84,13 +104,17 @@ The tier definitions are read at runtime from RLS `gameplay/overhaul/repo/repoVe
 ### Tow faults
 
 The vehicle can still drive a few metres onto a flatbed, so a winch is never required.
+Each tow job has exactly one fault, so the player can tell what is wrong.
 
 | Fault | Effect |
 |---|---|
-| Nearly empty tank | Fuel for a few hundred metres |
-| Flat tyre | One deflated tyre (RLS tyre state) |
-| Overheating | Engine overheats after a short drive |
-| Worn | Aged parts and worse appearance; combined with another fault |
+| Nearly empty tank | About 0.08 l of fuel, enough for a few hundred metres; nothing else |
+| Flat tyre | One deflated tyre; nothing else |
+| Overheating | Broken radiator with no coolant left; the engine is hot (125 °C) when the player arrives and overheats as soon as it runs |
+| Failing engine | Engine integrity 0.5–0.3, chosen at random: misfires and an unstable idle that make it stall |
+
+Electric vehicles only get a flat tyre. About 40 % of tow vehicles also look shabby (worse
+paint and visual condition), which has no effect on driving.
 
 There is no rule against driving the vehicle to the destination: refuelling and driving
 is allowed, and driving an overheating car ruins the engine, which the damage penalty
@@ -117,6 +141,19 @@ quote = (callout + outboundRate × km to vehicle + loadedRate × km loaded)
   RLS takes the fee per recovery spot, the cap uses the best fee reachable at that level). Recovery reference
   (RLS 2.8 `jobs/recovery/rewards.lua`):
   `(1500 + 100/km outbound + 250/km loaded + fee) × (1 + 2p²)`, `p = floor((level − 5) / 2) / 22`.
+
+### Towing, not driving
+
+A tow job pays for towing. Every half second, while the player sits in the target vehicle,
+the distance it moved is added up (steps under 0.5 m or over 50 m are ignored: settling on a
+bed, teleports, resets). Riding on a flatbed or trailer, a wheel lift or a rope does not count,
+because the player sits in the tow vehicle then.
+
+- The first **200 m** are free, to get the vehicle loaded.
+- Beyond that the pay drops in proportion to the share of the loaded route driven beyond the
+  allowance, down to **25 % of the quote and no XP** when the whole route was driven.
+- The player is told on accept, when they first get in the target, and when the free distance
+  runs out; the active job shows a live meter, and the completion breakdown a "Not towed" line.
 
 ### Damage penalty
 
@@ -145,7 +182,8 @@ conflict; to decide once the recovery site base XP on The Gap is known. Damage n
 The job completes when the vehicle is within ~5 m of the destination spot and stopped,
 loaded on the truck or not (as RLS does). The player sees a breakdown: quote, damage
 penalty, payout and XP. Payouts are tagged so RLS Wallet
-lists them under repo/recovery with an extra hub tag, and the job is written to the
+lists them as work income from recovery (`activity:recovery`, like Off-Road Recovery) with an
+extra hub tag, and the job is written to the
 RLS logbook.
 
 ### Cancellation and failure
@@ -153,7 +191,10 @@ RLS logbook.
 - **Custody** starts when the vehicle has moved more than ~10 m from its spot.
 - Cancelling before custody is free. The offer leaves the board and is replaced.
 - Cancelling after custody, or losing or destroying the vehicle after custody, costs a
-  fixed fine of **1 000 × tier multiplier × economy multiplier** and gives no XP.
+  fine of **50 % of the quote, at least $200**, and gives no XP. The quote already carries
+  the tier, distances and economy, and half the quote equals the largest damage penalty, so
+  cancelling never beats delivering a damaged vehicle. (A fixed 1 000 × tier × economy fine
+  was dropped: it could exceed the whole payout of a short job.)
 - A vehicle lost before custody (traffic, despawn, failed spawn) ends the job with no
   consequence and a message.
 - RLS offers no hook to block map travel for third-party jobs, so an active job pauses
@@ -172,18 +213,21 @@ RLS logbook.
 - The original RLS Repo app and jobs stay as they are.
 - No blocking between hub and RLS jobs; navigation simply follows the last route set.
 - The app warns when the installed RLS version is not 2.8.x.
-- To check in game: the RLS Carjacking & Theft mod must not treat hub targets as stealable.
+- The RLS Carjacking & Theft mod does not treat hub targets as stealable: it only takes
+  AI traffic spawned by the traffic system, and hub targets are inserted with AI off
+  (checked in its `isJackableTrafficVehicle`, v0.40, and in game).
 
 ## Acceptance criteria
 
-1. The RLS phone shows a **Tow & Repo Hub** app; installing the add-on breaks neither RLS
+1. The RLS phone shows a **Tow Dispatch** app; installing the add-on breaks neither RLS
    nor other phone apps. The app warns on an RLS version other than 2.8.x.
-2. The board holds 6 offers with all fields listed under *Board*, refills about every
-   3 in-game minutes, expires offers after about 20 minutes and keeps one active job.
+2. The board starts with 10–14 jobs of all tiers in about the listed shares, showing all
+   fields listed under *Board*, grows with time up to 14, expires each job after 12–30
+   in-game minutes and keeps one active job.
 3. Sorting and filters work as listed under *Board*; the Route button sets navigation.
 4. The board follows the diversity rules and relaxes them when nothing fits.
-5. Offered tiers respect the player's Recovery level; Tow vehicles are classified as
-   listed under *Tiers*.
+5. Only jobs of tiers the player has unlocked can be accepted; locked jobs are listed apart
+   with their unlock level. Tow vehicles are classified as listed under *Tiers*.
 6. Pickups use parking spots ≥ 300 m from the player, skip the last ~10 used spots and
    never collide with RLS reservations; the vehicle spawns only on accept.
 7. Destinations follow *Destinations*, including the 500 m minimum road route.

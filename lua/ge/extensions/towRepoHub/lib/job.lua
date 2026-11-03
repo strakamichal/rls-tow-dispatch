@@ -33,6 +33,19 @@ function M.isDelivered(job, targetToDropM, targetSpeedMps)
     and tonumber(targetSpeedMps) ~= nil and targetSpeedMps <= M.config.stoppedSpeedMps
 end
 
+-- Metres to add to the self-driven distance for one check, given how far the vehicle moved since
+-- the last one while the player sat in it. Jitter (settling on a bed) and jumps (teleport, reset)
+-- do not count.
+M.config.driveMinStepM = 0.5
+M.config.driveMaxStepM = 50
+
+function M.drivenStep(movedM)
+  local moved = tonumber(movedM)
+  if not moved or moved ~= moved then return 0 end
+  if moved < M.config.driveMinStepM or moved > M.config.driveMaxStepM then return 0 end
+  return moved
+end
+
 -- Cancelling, losing or destroying the vehicle costs a fine only after custody started.
 function M.endsWithFine(job)
   return job.custody == true
