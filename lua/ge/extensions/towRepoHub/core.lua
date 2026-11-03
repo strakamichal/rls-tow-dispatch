@@ -397,8 +397,7 @@ local function generateTowOffer(state, level, fromPos, candidates)
   if #list == 0 then return nil end
   local destination = debugShortJobs and nearestEntry(list, fromPos) or list[math.random(#list)]
 
-  local tier = deepcopy(tierByTag[candidate.tierKey])
-  tier.tierLabel = tow.tierLabel(tier.tierLabel)
+  local tier = tow.tierData(candidate.tierKey, tierByTag[candidate.tierKey])
   local offer = buildOffer(state, level, fromPos, "tow", info, candidate.tierKey, tier, destination)
   if not offer then return nil end
   offer.destinationKind = kind
@@ -804,12 +803,12 @@ local function trackSelfDrive(job, targetPos)
   local allowance = pricing.config.selfDriveAllowanceM
   if not job.selfDriveWarned then
     job.selfDriveWarned = true
-    ui_message(string.format("Tow jobs pay for towing.\nDrive this car yourself only to load it: after %d m the pay drops.",
+    ui_message(string.format("Tow jobs pay for towing.\nYou are allowed to drive this car only %d m, to load it.",
       allowance), 8, LOG_TAG, "warning")
   end
   if (job.drivenM or 0) > allowance and not job.selfDriveOverWarned then
     job.selfDriveOverWarned = true
-    ui_message("You have driven this car more than the free distance.\nThe pay drops the further you drive it; tow it instead.",
+    ui_message("You have driven this car further than allowed.\nThe pay drops the further you drive it; tow it instead.",
       8, LOG_TAG, "warning")
     log("I", LOG_TAG, "self-drive allowance used up")
   end
@@ -1027,7 +1026,7 @@ local function acceptOffer(id)
   local story = job.jobType == "tow"
     and string.format("Tow job accepted: %s (%s).", vehicleLabel(job), job.faultLabel or "broken down")
     or string.format("Repo job accepted: %s.", vehicleLabel(job))
-  ui_message(string.format("%s\nTow it to %s for $%d. Driving it yourself is free only for the first %d m.",
+  ui_message(string.format("%s\nTow it to %s for $%d. You are allowed to drive it yourself only %d m.",
     story, job.destinationName, job.quote, pricing.config.selfDriveAllowanceM), 10, LOG_TAG, "info")
   log("I", LOG_TAG, string.format("job accepted: offer %d, vehicle %d", offer.id, job.vehicleId))
   return { ok = true }
@@ -1123,7 +1122,7 @@ local function getState()
     careerActive = careerActive(),
     disabledReason = boardDisabledReason(),
     skillLevel = level,
-    skillBonus = pricing.repoSkillBonus(level),
+    skillBonus = pricing.skillBonus(level),
     skill = careerActive() and skillProgress() or nil,
     boardSize = board.config.size,
     offers = {},
@@ -1201,8 +1200,7 @@ local function debugAddTowOffer(modelKey, fault, severity)
   local tierKey = tow.tierKey(info)
   local _, tierByTag = loadRepoTiers()
   if not tierByTag[tierKey] then return { ok = false, reason = "No tier data for " .. tostring(tierKey) .. "." } end
-  local tier = deepcopy(tierByTag[tierKey])
-  tier.tierLabel = tow.tierLabel(tier.tierLabel)
+  local tier = tow.tierData(tierKey, tierByTag[tierKey])
   local destinations = towDestinations()
   local kind = tow.destinationKind(math.random, tow.isHeavy(info), #destinations.home > 0)
   if #destinations[kind] == 0 then return { ok = false, reason = "No destination on this map." } end

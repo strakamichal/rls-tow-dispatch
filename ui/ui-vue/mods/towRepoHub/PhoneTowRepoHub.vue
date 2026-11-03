@@ -91,8 +91,8 @@
               <span v-if="job.drivenM > job.driveAllowanceM">
                 Driven yourself {{ distance(job.drivenM) }}: pay <b>−{{ money(job.notTowedSoFar) }}</b>. Tow it!
               </span>
-              <span v-else-if="job.drivenM > 0">Driven yourself {{ distance(job.drivenM) }} of {{ distance(job.driveAllowanceM) }} free</span>
-              <span v-else>Tow it: driving it yourself is free only for {{ distance(job.driveAllowanceM) }}</span>
+              <span v-else-if="job.drivenM > 0">Driven yourself {{ distance(job.drivenM) }} of {{ distance(job.driveAllowanceM) }} allowed</span>
+              <span v-else>Tow it: you are allowed to drive it yourself only {{ distance(job.driveAllowanceM) }}</span>
             </div>
             <div class="tow-meter-bar">
               <div :style="{ width: `${Math.min(100, Math.round((job.drivenM || 0) / job.driveAllowanceM * 100))}%` }" />
@@ -254,13 +254,13 @@
         <div class="hazard" />
         <span class="eyebrow">How it works</span>
         <ol>
-          <li><b>Pick a job.</b> A broken-down car needs to go to the owner's home or to a service. The fault and the payout are shown up front; the payout is fixed when you accept.</li>
-          <li><b>Tow it.</b> Load it on a flatbed or trailer, lift it or pull it on a rope. You may drive it yourself for the first 200 m to get it loaded; beyond that the pay drops, down to a quarter and no XP if you drive it all the way.</li>
-          <li><b>Deliver it.</b> Stop within the green marker at the destination. You are paid the quote and get Recovery XP.</li>
-          <li><b>Mind the damage.</b> Damage you cause on the way is taken from the payout, at most half of it.</li>
-          <li><b>Cancelling</b> is free until you move the vehicle; after that it costs a fine.</li>
+          <li><b>Pick a job.</b> Somebody's car broke down and needs to go home or to a service. You see what is wrong with it and what it pays before you take it.</li>
+          <li><b>Tow it.</b> Flatbed, trailer, wheel lift or rope: your call. Moving it a little under its own power to get it loaded is fine. Driving it all the way is not towing, and the customer pays for towing.</li>
+          <li><b>Deliver it.</b> Stop at the green marker. Cash and Recovery XP are yours.</li>
+          <li><b>Handle with care.</b> Customers notice new dents, and so does your pay.</li>
+          <li><b>Changed your mind?</b> Walk away before you touch the car and nobody minds. Once it is in your hands, backing out costs you.</li>
         </ol>
-        <p>One job at a time. Offers expire, and new ones come in over time. Higher Recovery levels unlock better-paying tiers.</p>
+        <p>One job at a time. Calls expire and new ones come in. The better your Recovery skill, the better the cars you get trusted with.</p>
         <button type="button" class="btn primary" @click="helpOpen = false">Got it</button>
       </section>
     </div>

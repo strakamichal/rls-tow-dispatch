@@ -129,7 +129,11 @@ quote = (callout + outboundRate × km to vehicle + loadedRate × km loaded)
 
 - Starting constants: callout **400**, outbound **55/km**, loaded **135/km**; tuned in game.
   Distances are road route lengths.
-- Repo skill bonus as RLS repo: `4 × floor(level / 2) / 24`, capped at +400 %.
+- Skill bonus: the RLS repo steps scaled down, `2 × floor(level / 2) / 24`, capped at +200 %
+  (RLS repo goes to +400 %, which ran most jobs into the recovery cap at higher levels).
+- Tier multiplier for tow: the hub's own ladder, so every tier pays more than the one below
+  (RLS gives Low Value and Budget the same): Low Value 1.0, Budget 1.15, Standard 1.3,
+  Luxury 1.5, Exotic 1.75, Heavy 2.0. Unlock levels still come from RLS.
 - Job type factor: Tow 1.1, Repo 1.0.
 - Economy multiplier: the RLS `repo` economy section.
 - No speed or time component; the quote is fixed when the offer is created.
@@ -167,11 +171,14 @@ because the player sits in the tow vehicle then.
 ### XP
 
 ```
-xp = RLS repo xp for the tier × (3 + km loaded) / 5 × job type factor
+xp = RLS repo xp for the tier × (9.5 + km loaded) / 14 × job type factor
 ```
 
-RLS repo xp is `(5 + tier baseXp + round(km / 2)) × 2`. A 2 km job gives what RLS
-repo gives today; longer jobs give proportionally more, the same per minute.
+RLS repo xp is `(5 + tier baseXp + round(km / 2)) × 2`, with tow base XP per tier
+Low Value 300, Budget 350, Standard 500, Luxury 900, Exotic 1 400, Heavy 1 800. The distance
+factor grows about half as fast as the pay (0.5 km ≈ 0.71, 7 km ≈ 1.18), so a long job gives
+more XP but not a whole level. (The first draft used `(3 + km) / 5`, "the same XP per
+minute"; at level 14 one long job then gave a full level.)
 **Open:** the spec also asked that XP never exceed 90 % of comparable Off-Road Recovery
 XP. Recovery XP is `(5 + site baseXp + round(km / 2)) × 4` and barely grows with distance,
 so with equal base XP a hub job passes 90 % of it from about 6 km loaded. The two goals

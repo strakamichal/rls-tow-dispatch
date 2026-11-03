@@ -44,30 +44,35 @@ return function(t)
       t.near(pricing.recoveryQuote(2, 2, 30), 5200 * (1 + 2 * (12 / 22) ^ 2), 1e-9, "level 30")
     end },
 
+    { "hub skill bonus is the repo steps scaled to +200 %", function()
+      t.eq(pricing.skillBonus(1), 0, "level 1")
+      t.near(pricing.skillBonus(11), 2 * 5 / 24, 1e-9, "level 11")
+      t.eq(pricing.skillBonus(48), 2, "level 48")
+      t.eq(pricing.skillBonus(50), 2, "capped")
+    end },
+
     { "quote at level 11, Low tier, 2 + 2 km", function()
-      -- (400 + 55*2 + 135*2) * 1.0 * (1 + 5/6) = 1430
-      t.eq(quote(2, 2, 11, 1.0), 1430, "repo")
-      t.eq(quote(2, 2, 11, 1.0, "tow"), 1573, "tow is 1.1x")
+      -- (400 + 55*2 + 135*2) * 1.0 * (1 + 5/12) = 1105
+      t.eq(quote(2, 2, 11, 1.0), 1105, "repo")
+      t.eq(quote(2, 2, 11, 1.0, "tow"), 1216, "tow is 1.1x")
     end },
 
     { "economy multiplier scales the quote", function()
-      t.eq(quote(2, 2, 11, 1.0, "repo", 0.72), 1030, "1430 * 0.72")
+      t.eq(quote(2, 2, 11, 1.0, "repo", 0.72), 796, "1105 * 0.72")
     end },
 
-    { "cap applies to long heavy jobs", function()
+    { "cap applies to very long heavy jobs", function()
       local amount, breakdown = pricing.quote({
-        outboundKm = 3, loadedKm = 8, level = 11, tierMultiplier = 1.8, jobType = "repo", economy = 1,
+        outboundKm = 3, loadedKm = 30, level = 30, tierMultiplier = 1.8, jobType = "repo", economy = 1,
       })
-      -- 0.9 * (1500 + 300 + 2000 + 1500) * (1 + 2 * (3/22)^2) = 4947
-      t.eq(amount, 4947, "capped amount")
+      t.eq(amount, math.floor(0.9 * pricing.recoveryQuote(3, 30, 30) + 0.5), "capped amount")
       t.truthy(breakdown.capped, "breakdown marks the cap")
     end },
 
     { "tow factor applies below the cap and is cut by it above", function()
-      -- Standard, level 11, 2 + 2 km: raw tow = 780 * 1.15 * (11/6) * 1.1 = 1809, cap 0.9 * 3700 * (1 + 2*(3/22)^2) ≈ 3454
-      t.eq(quote(2, 2, 11, 1.15, "tow"), 1809, "below cap")
-      -- Heavy, level 11, 3 + 8 km: repo and tow both hit the same cap.
-      t.eq(quote(3, 8, 11, 1.8, "tow"), quote(3, 8, 11, 1.8, "repo"), "same cap for both types")
+      -- Standard, level 11, 2 + 2 km: 780 * 1.15 * (1 + 5/12) * 1.1 = 1397.9
+      t.eq(quote(2, 2, 11, 1.15, "tow"), 1398, "below cap")
+      t.eq(quote(3, 30, 30, 1.8, "tow"), quote(3, 30, 30, 1.8, "repo"), "same cap for both types")
     end },
 
     { "cap follows the recovery economy when the RLS sections differ", function()
@@ -118,12 +123,15 @@ return function(t)
       t.raises(function() quote(1, 1, 11, 1.0, "taxi") end)
     end },
 
-    { "xp matches RLS repo for a 2 km job and scales with distance", function()
-      -- RLS repo: (5 + 500 + round(2/2)) * 2 = 1012
-      t.eq(pricing.xp({ tierBaseXp = 500, loadedKm = 2, jobType = "repo" }), 1012, "2 km")
-      -- (5 + 500 + 4) * 2 = 1018; * (3 + 8) / 5 = 2239.6
-      t.eq(pricing.xp({ tierBaseXp = 500, loadedKm = 8, jobType = "repo" }), 2240, "8 km")
-      t.eq(pricing.xp({ tierBaseXp = 500, loadedKm = 2, jobType = "tow" }), 1113, "tow is 1.1x")
+    { "xp is RLS repo xp scaled gently by distance", function()
+      -- RLS repo: (5 + 500 + round(2/2)) * 2 = 1012; * (9.5 + 2) / 14 = 831.3
+      t.eq(pricing.xp({ tierBaseXp = 500, loadedKm = 2, jobType = "repo" }), 831, "2 km")
+      -- (5 + 500 + 4) * 2 = 1018; * (9.5 + 8) / 14 = 1272.5
+      t.eq(pricing.xp({ tierBaseXp = 500, loadedKm = 8, jobType = "repo" }), 1273, "8 km")
+      t.eq(pricing.xp({ tierBaseXp = 500, loadedKm = 2, jobType = "tow" }), 914, "tow is 1.1x")
+      local short = pricing.xp({ tierBaseXp = 500, loadedKm = 0.5, jobType = "repo" })
+      local long = pricing.xp({ tierBaseXp = 500, loadedKm = 7, jobType = "repo" })
+      t.truthy(long / short < 1.8, "a 7 km job gives well under twice the XP of a short one")
     end },
 
     { "settlement caps the damage penalty at half the quote", function()

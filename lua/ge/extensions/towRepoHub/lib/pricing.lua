@@ -17,6 +17,13 @@ M.config = {
   -- whole loaded route was driven.
   selfDriveAllowanceM = 200,
   selfDriveMinPayShare = 0.25,
+  -- Recovery skill pay bonus: the RLS repo steps (every two levels) but up to +200 % instead of
+  -- +400 %, so pay keeps growing with level without running every job into the recovery cap.
+  skillBonusMax = 2,
+  -- XP distance factor: (xpDistanceBase + km loaded) / xpDistanceDivisor. Grows about half as fast
+  -- as "XP per minute"; 0.5 km gives ~0.71, 7 km ~1.18.
+  xpDistanceBase = 9.5,
+  xpDistanceDivisor = 14,
 }
 
 -- Off-Road Recovery reference values from RLS 2.8 jobs/recovery/rewards.lua.
@@ -74,6 +81,12 @@ function M.repoSkillBonus(level)
   return 4 * steps / 24
 end
 
+-- The hub's own pay bonus: the RLS repo steps scaled to config.skillBonusMax (+200 % at level 48).
+function M.skillBonus(level)
+  local steps = clamp(math.floor(skillLevel(level) / 2), 0, 24)
+  return M.config.skillBonusMax * steps / 24
+end
+
 -- Same curve as RLS Off-Road Recovery (jobs/recovery/vehiclePool.lua): quadratic, +200 % at level 49.
 function M.recoverySkillBonus(level)
   local clamped = clamp(skillLevel(level), 1, MAX_SKILL_LEVEL)
@@ -110,7 +123,7 @@ function M.quote(args)
   local tierMultiplier = tierMultiplierOf(args.tierMultiplier)
   local economy = economyOf(args.economy)
   local recoveryEconomy = economyOf(args.recoveryEconomy or economy)
-  local bonus = M.repoSkillBonus(args.level)
+  local bonus = M.skillBonus(args.level)
   local typeFactor = jobTypeFactor(args.jobType)
 
   local base = cfg.callout + cfg.outboundPerKm * outboundKm + cfg.loadedPerKm * loadedKm
@@ -139,11 +152,13 @@ function M.rlsRepoXp(tierBaseXp, loadedKm)
 end
 
 -- args: tierBaseXp, loadedKm, jobType
--- A 2 km job gives what RLS repo gives; longer jobs scale so XP per minute stays even.
--- Damage never reduces XP.
+-- RLS repo XP for the tier, scaled by a distance factor that grows about half as fast as the pay,
+-- so long jobs give more XP without a level per job. Damage never reduces XP.
 function M.xp(args)
+  local cfg = M.config
   local loadedKm = distanceKm(args.loadedKm)
-  local xp = M.rlsRepoXp(args.tierBaseXp, loadedKm) * (3 + loadedKm) / 5 * jobTypeFactor(args.jobType)
+  local distanceFactor = (cfg.xpDistanceBase + loadedKm) / cfg.xpDistanceDivisor
+  local xp = M.rlsRepoXp(args.tierBaseXp, loadedKm) * distanceFactor * jobTypeFactor(args.jobType)
   return round(xp)
 end
 

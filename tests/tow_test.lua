@@ -74,6 +74,19 @@ return function(t)
       t.truthy(not tow.isElectric(car()), "gasoline")
     end },
 
+    { "every tow tier pays and teaches more than the one below", function()
+      local order = { "junkerVeh", "smallVeh", "fleetVeh", "highEndVeh", "exoticVeh", "heavyVeh" }
+      for i = 2, #order do
+        t.truthy(tow.TIER_PAY[order[i]] > tow.TIER_PAY[order[i - 1]], "pay rises at " .. order[i])
+        t.truthy(tow.TIER_BASE_XP[order[i]] > tow.TIER_BASE_XP[order[i - 1]], "XP rises at " .. order[i])
+      end
+      local tier = tow.tierData("smallVeh", { payMultiplier = 1.0, baseXp = 250, tierLabel = "Budget Repo", skillUnlockLevel = 5 })
+      t.eq(tier.payMultiplier, 1.15, "tow pay")
+      t.eq(tier.baseXp, 350, "tow XP")
+      t.eq(tier.tierLabel, "Budget Tow", "label")
+      t.eq(tier.skillUnlockLevel, 5, "RLS unlock level kept")
+    end },
+
     { "tier labels say Tow", function()
       t.eq(tow.tierLabel("Low Value Repo"), "Low Value Tow", "repo suffix")
       t.eq(tow.tierLabel("Heavy"), "Heavy Tow", "no suffix")

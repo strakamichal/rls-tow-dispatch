@@ -29,6 +29,22 @@ M.VALUE_TIERS = {
 }
 M.HEAVY_TIER = "heavyVeh"
 
+-- Tow pay and XP per tier. RLS gives Low Value and Budget the same pay multiplier and Budget less
+-- base XP, so unlocking Budget would bring nothing; tow uses its own ladder instead. Unlock levels
+-- still come from RLS.
+M.TIER_PAY = { junkerVeh = 1.0, smallVeh = 1.15, fleetVeh = 1.3, highEndVeh = 1.5, exoticVeh = 1.75, heavyVeh = 2.0 }
+M.TIER_BASE_XP = { junkerVeh = 300, smallVeh = 350, fleetVeh = 500, highEndVeh = 900, exoticVeh = 1400, heavyVeh = 1800 }
+
+-- The RLS tier data with the tow pay multiplier, base XP and label applied.
+function M.tierData(tierKey, rlsTier)
+  local tier = {}
+  for k, v in pairs(rlsTier or {}) do tier[k] = v end
+  tier.payMultiplier = M.TIER_PAY[tierKey] or tier.payMultiplier or 1
+  tier.baseXp = M.TIER_BASE_XP[tierKey] or tier.baseXp or 0
+  tier.tierLabel = M.tierLabel(tier.tierLabel)
+  return tier
+end
+
 -- One fault per job, so the player can tell what is wrong with the vehicle.
 M.FAULTS = { "fuel", "flat", "overheat", "engine" }
 M.FAULT_LABELS = {
