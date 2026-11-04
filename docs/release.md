@@ -58,11 +58,13 @@ The upload is done by the author in the browser (it needs their beamng.com accou
 
 - **Title:** Tow Dispatch for RLS Career Overhaul
 - **Category:** the one RLS add-ons use (check RLS's own page); tag BeamNG 0.40.
-- **Short description** (one line): Tow jobs for the RLS career phone: pick up broken-down cars
-  and tow them home or to a service.
-- **Description:** what it is; requires RLS Career Overhaul 2.8.x and BeamNG 0.40; how to play
-  (open Tow Dispatch on the phone, accept, tow it rather than drive it, since driving it yourself cuts the pay, deliver); tiers
-  unlocked with the Recovery skill; faults; saving; known limits; link to GitHub for issues.
+- **Short description** (one line): Run a tow business in your RLS career: take breakdown
+  calls on the phone and tow the cars home or to a service.
+- **Description:** a new way to earn money in the RLS career as a tow company; requires RLS
+  Career Overhaul 2.8.x and BeamNG 0.40; how to play (open Tow Dispatch on the phone, accept a
+  call, load the car on your truck, deliver it home or to a service; driving it there yourself
+  cuts the pay); tiers unlocked with the Recovery skill; the four faults; saving; known limits;
+  link to GitHub for issues. The README's first two sections are a good base.
 - **Images:** 1–4 in-game screenshots at 16:9 in daylight: the board on the phone, a car on a
   flatbed, the active job card, the delivery payout. The first one becomes the thumbnail, and
   the repository uses it for the mod manager card too.

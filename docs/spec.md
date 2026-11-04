@@ -5,21 +5,26 @@ Targets: BeamNG.drive 0.40, RLS Career Overhaul 2.8.0.
 
 ## Problem
 
-RLS repo jobs are generated one at a time. To find a job worth doing, the player
-generates an offer, checks the vehicle and map, cancels and repeats until the tier,
-location and vehicle fit. The drop-off is not shown, so the player guesses it from
-the vehicle type. Pay barely grows with distance, so a 6 km tow on a winding road
-is not worth the time and short jobs always win. There is also no towing work in
-the sense of "my car broke down, take it home or to a garage".
+RLS has no towing work in the sense of "my car broke down, take it home or to a
+garage". The closest job, RLS repo, hands out one offer at a time: the player
+generates it, checks the vehicle and map, cancels and repeats until it fits; the
+drop-off is not shown, and pay barely grows with distance, so long tows are never
+worth the time.
 
 ## Goals
 
-- See several offers at once with everything needed to choose one.
-- Quote the payout before accepting; short and long jobs pay about the same per minute.
-- Add tow jobs (broken-down cars) next to repo jobs.
-- Keep this work a step below Off-Road Recovery in pay and XP.
+- A new way to earn money in the RLS career: running a tow business that answers
+  breakdown calls and tows the cars home or to a service.
+- A job board with several calls at once and everything needed to choose one.
+- The payout quoted before accepting; short and long jobs pay about the same per minute.
+- Towing, not driving: the job is to carry the car, not to drive it there.
+- A step below Off-Road Recovery in pay and XP.
 - Progress the existing RLS Recovery skill, not a new one.
 - Leave the original RLS repo jobs untouched.
+
+The project started as an improved repo board ("Tow & Repo Hub"); playing it showed
+that repo vehicles are intact and simply driven away, so the board became tow-only
+(see *Job types*).
 
 ## Design
 
@@ -119,9 +124,9 @@ Each tow job has exactly one fault, so the player can tell what is wrong.
 Electric vehicles only get a flat tyre. About 40 % of tow vehicles also look shabby (worse
 paint and visual condition), which has no effect on driving.
 
-There is no rule against driving the vehicle to the destination: refuelling and driving
-is allowed, and driving an overheating car ruins the engine, which the damage penalty
-charges. Crashed (deformed) vehicles are out of scope for now.
+Driving the vehicle to the destination is possible (refuelling, for example), but the
+*Towing, not driving* rule cuts the pay, and driving an overheating car ruins the engine,
+which the damage penalty charges. Crashed (deformed) vehicles are out of scope for now.
 
 ### Pricing
 
