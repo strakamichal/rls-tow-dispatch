@@ -283,6 +283,7 @@
         <ol>
           <li><b>Pick a job.</b> Somebody's car broke down and needs to go home or to a service. You see what is wrong with it and what it pays before you take it.</li>
           <li><b>Tow it.</b> Flatbed, trailer, wheel lift or rope: your call. Moving it a little under its own power to get it loaded is fine. Driving it all the way is not towing, and the customer pays for towing.</li>
+          <li><b>No tow truck yet?</b> Rent one at the Job Broker depot. Your own rig earns a bonus on every tow.</li>
           <li><b>Deliver it.</b> Stop at the green marker. Cash and Recovery XP are yours.</li>
           <li><b>Handle with care.</b> Customers notice new dents, and so does your pay.</li>
           <li><b>Changed your mind?</b> Walk away before you touch the car and nobody minds. Once it is in your hands, backing out costs you.</li>
@@ -315,7 +316,7 @@
           <span v-else class="no-xp">No Recovery XP: not towed</span>
         </div>
 
-        <p v-if="!completion.penalty && !completion.notTowed" class="clean">
+        <p v-if="!completion.penalty && !completion.notTowed && !completion.ownRig" class="clean">
           <svg viewBox="0 0 24 24"><path :d="icons.check" /></svg>Towed without damage, full pay
         </p>
         <ul v-else class="breakdown">
@@ -324,6 +325,9 @@
             <span>Not towed ({{ distance(completion.drivenM) }} driven)</span><span>−{{ money(completion.notTowed) }}</span>
           </li>
           <li v-if="completion.penalty" class="penalty"><span>Damage penalty</span><span>−{{ money(completion.penalty) }}</span></li>
+          <li v-if="completion.ownRig" class="bonus">
+            <span>{{ completion.rentedTrailer ? 'Own truck' : 'Own rig' }} bonus (+{{ percent(completion.ownRigShare) }})</span><span>+{{ money(completion.ownRig) }}</span>
+          </li>
           <li class="total"><span>Paid</span><span>{{ money(completion.paid) }}</span></li>
         </ul>
 
@@ -1242,6 +1246,7 @@ svg { width: 1em; height: 1em; fill: currentColor; flex: none; }
   font-size: .9em;
   li { display: flex; justify-content: space-between; padding: 3px 0; }
   .penalty { color: #ff8a73; }
+  .bonus { color: $money; }
   .total { border-top: 1px solid $line; margin-top: 4px; padding-top: 6px; font-weight: 700; color: $money; }
 }
 </style>

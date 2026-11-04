@@ -36,6 +36,8 @@ The first release: run a tow business in your RLS career.
   fine, but driving it to the destination yourself cuts the pay and gives no XP.
 - Damage you cause on the way comes off the payout, at most half of it.
 - Cancelling is free until you move the car; after that it costs a fine.
+- Start with a pickup and a car trailer rented at the Job Broker depot; once the rig is your
+  own, every tow pays 10 % more (5 % with your own truck and a rented trailer).
 
 ### Part of your career
 - Payouts show up in Wallet as recovery income, and finished jobs in the logbook.

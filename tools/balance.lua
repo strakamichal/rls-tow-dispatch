@@ -47,11 +47,13 @@ local BROKER_BASE_PAY_MULTIPLIER = 1.5
 
 local function minutes(km, kmh) return km / kmh * 60 end
 
+-- With the player's own rig, so the own rig bonus is included.
 local function towJob(class, level)
   local quote = pricing.quote({
     outboundKm = OUTBOUND_KM, loadedKm = LOADED_KM, level = level,
     tierMultiplier = tow.TIER_PAY[class.key], jobType = "tow", economy = 1,
   })
+  quote = quote + pricing.ownRigBonus(quote, pricing.ownRigBonusShare(true, nil))
   return quote, minutes(OUTBOUND_KM, TRUCK_KMH) + LOAD_MIN + minutes(LOADED_KM, TOWING_KMH) + STOP_MIN
 end
 
@@ -102,7 +104,8 @@ end
 
 local function perMinute(pay, time) return pay / time end
 
-print(string.format("Pay per minute (pay per job); %g km to the car, %g km loaded", OUTBOUND_KM, LOADED_KM))
+print(string.format("Pay per minute (pay per job); %g km to the car, %g km loaded; tow with an own rig",
+  OUTBOUND_KM, LOADED_KM))
 for _, level in ipairs(LEVELS) do
   print(string.format("\nRecovery and Logistics level %d; Off-Road Recovery %.0f/min",
     level, perMinute(offroadJob(level))))

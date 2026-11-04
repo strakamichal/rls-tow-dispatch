@@ -20,6 +20,11 @@ M.config = {
   -- as "XP per minute"; 0.5 km gives ~0.71, 7 km ~1.18.
   xpDistanceBase = 9.5,
   xpDistanceDivisor = 14,
+  -- Own rig bonus on top of the quote: the player's own tow vehicle (and trailer, if any), or the
+  -- player's own vehicle pulling a trailer rented at the Job Broker depot. A rented tow vehicle
+  -- gets none; RLS already charges hourly rent for it.
+  ownRigBonus = 0.10,
+  ownVehicleRentedTrailerBonus = 0.05,
 }
 
 local MAX_SKILL_LEVEL = 50
@@ -121,6 +126,19 @@ function M.settle(quote, damagePenalty)
   quote = math.max(0, finite(quote, 0))
   local penalty = round(clamp(finite(damagePenalty, 0), 0, quote * M.config.maxPenaltyShare))
   return quote - penalty, penalty
+end
+
+-- Own rig bonus share of the quote. rigOwned: the tow vehicle (flatbed, the vehicle pulling the
+-- trailer, or the one with the wheel lift or rope) is the player's own. trailerOwned: true or false
+-- when the target rides on a trailer, nil without one.
+function M.ownRigBonusShare(rigOwned, trailerOwned)
+  if not rigOwned then return 0 end
+  if trailerOwned == false then return M.config.ownVehicleRentedTrailerBonus end
+  return M.config.ownRigBonus
+end
+
+function M.ownRigBonus(quote, share)
+  return round(math.max(0, finite(quote, 0)) * clamp(finite(share, 0), 0, 1))
 end
 
 -- Fixed fine for abandoning or losing a vehicle in custody.

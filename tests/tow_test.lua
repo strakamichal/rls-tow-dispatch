@@ -88,12 +88,12 @@ return function(t)
     end },
 
     { "tow pay ladder", function()
-      t.eq(tow.TIER_PAY.junkerVeh, 1.3, "Low Value")
-      t.eq(tow.TIER_PAY.smallVeh, 1.5, "Budget")
-      t.eq(tow.TIER_PAY.fleetVeh, 1.7, "Standard")
-      t.eq(tow.TIER_PAY.highEndVeh, 2.0, "Luxury")
-      t.eq(tow.TIER_PAY.exoticVeh, 2.4, "Exotic")
-      t.eq(tow.TIER_PAY.heavyVeh, 2.85, "Heavy")
+      t.eq(tow.TIER_PAY.junkerVeh, 1.18, "Low Value")
+      t.eq(tow.TIER_PAY.smallVeh, 1.36, "Budget")
+      t.eq(tow.TIER_PAY.fleetVeh, 1.55, "Standard")
+      t.eq(tow.TIER_PAY.highEndVeh, 1.82, "Luxury")
+      t.eq(tow.TIER_PAY.exoticVeh, 2.18, "Exotic")
+      t.eq(tow.TIER_PAY.heavyVeh, 2.59, "Heavy")
     end },
 
     { "every tow tier pays and teaches more than the one below", function()
@@ -103,7 +103,7 @@ return function(t)
         t.truthy(tow.TIER_BASE_XP[order[i]] > tow.TIER_BASE_XP[order[i - 1]], "XP rises at " .. order[i])
       end
       local tier = tow.tierData("smallVeh", { payMultiplier = 1.0, baseXp = 250, tierLabel = "Budget Repo", skillUnlockLevel = 5 })
-      t.eq(tier.payMultiplier, 1.5, "tow pay")
+      t.eq(tier.payMultiplier, 1.36, "tow pay")
       t.eq(tier.baseXp, 350, "tow XP")
       t.eq(tier.tierLabel, "Budget Tow", "label")
       t.eq(tier.skillUnlockLevel, 5, "RLS unlock level kept")

@@ -140,8 +140,9 @@ quote = (callout + outboundRate × km to vehicle + loadedRate × km loaded)
   Distances are road route lengths.
 - Skill bonus: the RLS repo curve, `4 × floor(level / 2) / 24`, +400 % at level 48.
 - Tier multiplier for tow: the hub's own ladder, so every tier pays more than the one below
-  (RLS gives Low Value and Budget the same): Low Value 1.3, Budget 1.5, Standard 1.7,
-  Luxury 2.0, Exotic 2.4, Heavy 2.85. The top tiers step up faster so Exotic and Heavy pay
+  (RLS gives Low Value and Budget the same): Low Value 1.18, Budget 1.36, Standard 1.55,
+  Luxury 1.82, Exotic 2.18, Heavy 2.59, so that with the *Own rig bonus* (+10 %) they come to
+  1.3, 1.5, 1.7, 2.0, 2.4 and 2.85. The top tiers step up faster so Exotic and Heavy pay
   close to Job Broker deliveries of the same class. Unlock levels still come from RLS.
 - Job type factor: Tow 1.1, Repo 1.0.
 - Economy multiplier: the RLS `repo` economy section.
@@ -152,7 +153,7 @@ quote = (callout + outboundRate × km to vehicle + loadedRate × km loaded)
   bonus down to +200 %; with that, RLS repo out-earned towing at every tier and level.
 
 Balance reference (2026-11-04, RLS 2.8, 2 km to the car, modelled drive and load times, Recovery
-and Logistics at the same level):
+and Logistics at the same level, tow with an own rig):
 
 - A 6 km tow pays about 1.1–1.3× RLS repo of the same tier per minute. Repo pays for the drive
   to the car too and less per minute the longer the delivery, tow pays the same per minute at
@@ -192,6 +193,23 @@ because the player sits in the tow vehicle then.
   computes it. Losses below ~2 % per part are ignored.
 - The penalty is capped at 50 % of the quote, as in RLS Off-Road Recovery: a delivery
   always pays at least half the quote.
+
+### Own rig bonus
+
+A tow done with the player's own equipment pays a bonus on top of the quote, so buying a tow
+truck is worth it. Renting at the RLS Job Broker depot stays as RLS has it: hourly rent and no
+share of the pay (RLS: "Hourly rent replaces the organization's share of delivery revenue").
+
+- Own tow vehicle, and own trailer if one is used: **+10 %** of the quote.
+- Own vehicle pulling a trailer rented at the depot: **+5 %**.
+- Rented tow vehicle or flatbed: no bonus.
+- The rig is read at delivery: the vehicle the target rests on (a trailer and the vehicle pulling
+  it, or a flatbed); with a wheel lift or a rope, the vehicle the player sits in. Own means in the
+  player's RLS garage with no owning organization (not rented, not a company or delivery vehicle).
+- The completion breakdown shows an "Own rig bonus" or "Own truck bonus" line. The quote on the
+  board does not include the bonus.
+- The tier ladder is set so that a tow with an own rig pays what the balance reference below
+  describes; a rented rig earns about 9 % less.
 
 ### XP
 

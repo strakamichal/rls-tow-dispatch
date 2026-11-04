@@ -701,11 +701,55 @@ local function scaledXp(xp)
   return rewardData[SKILL_ATTRIBUTE] and tonumber(rewardData[SKILL_ATTRIBUTE].amount) or 0
 end
 
+local findCarrier
+
+-- True when the vehicle is in the player's RLS garage and no organization owns it: not rented at
+-- the Job Broker depot, not a company or delivery vehicle. On foot (RLS walking) is not owned.
+local function isOwnVehicle(vehicleId)
+  local garage = overhaul_career_garage_inventory
+  if not (vehicleId and garage and garage.getInventoryIdFromVehicleId and garage.getVehicles) then return false end
+  local inventoryId = garage.getInventoryIdFromVehicleId(vehicleId)
+  local info = inventoryId and garage.getVehicles()[inventoryId]
+  return info ~= nil and info.owningOrganization == nil
+end
+
+local function isTrailer(vehicle)
+  local ok, jbeam = pcall(function() return vehicle:getJBeamFilename() end)
+  local model = ok and jbeam and core_vehicles and core_vehicles.getModel(jbeam)
+  return model and model.model and model.model.Type == "Trailer" or false
+end
+
+-- Who owns the rig at delivery: the vehicle the target rests on (a trailer and what pulls it, or a
+-- flatbed), else the vehicle the player sits in (wheel lift, rope). Returns rigOwned and
+-- trailerOwned (nil without a trailer).
+local function rigOwnership(job)
+  local rigId, trailerId
+  local carrier = findCarrier(job)
+  if carrier and isTrailer(carrier) then
+    trailerId = carrier:getID()
+    local puller = core_trailerRespawn and core_trailerRespawn.getAttachedNonTrailer
+      and core_trailerRespawn.getAttachedNonTrailer(trailerId)
+    if puller and puller ~= trailerId then rigId = puller end
+  elseif carrier then
+    rigId = carrier:getID()
+  end
+  if not rigId then
+    local playerId = be:getPlayerVehicleID(0)
+    if playerId and playerId >= 0 and playerId ~= job.vehicleId then rigId = playerId end
+  end
+  local trailerOwned
+  if trailerId then trailerOwned = isOwnVehicle(trailerId) end
+  return isOwnVehicle(rigId), trailerOwned
+end
+
 local function completeJob(job, finalConditions)
   local damageValue = jobRules.damage(job.baseline, finalConditions, partValueLookup(job.vehicleId))
   local paid, penalty = pricing.settle(job.quote, damageValue)
   local notTowed, xpFactor = pricing.selfDrive(job.quote, job.drivenM, job.loadedM)
-  paid = math.max(0, paid - notTowed)
+  local rigOwned, trailerOwned = rigOwnership(job)
+  local ownRigShare = pricing.ownRigBonusShare(rigOwned, trailerOwned)
+  local ownRig = pricing.ownRigBonus(job.quote, ownRigShare)
+  paid = math.max(0, paid - notTowed) + ownRig
   local xp = scaledXp(pricing.xp({ tierBaseXp = job.tierBaseXp, loadedKm = job.loadedM / 1000, jobType = job.jobType }))
   xp = math.floor(xp * xpFactor + 0.5)
   local label = string.format("Tow Dispatch: delivered the %s to %s", vehicleLabel(job), job.destinationName)
@@ -727,6 +771,7 @@ local function completeJob(job, finalConditions)
     vehicle = { brand = job.brand, name = job.name, year = job.year },
     destinationName = job.destinationName,
     quote = job.quote, penalty = penalty, notTowed = notTowed, drivenM = job.drivenM or 0, paid = paid, xp = xp,
+    ownRig = ownRig, ownRigShare = ownRigShare, rentedTrailer = trailerOwned == false,
     skill = skillProgress(),
   }
   -- Level up, and the tow tiers that unlocked with it, for the completion screen.
@@ -742,9 +787,9 @@ local function completeJob(job, finalConditions)
     end
     log("I", LOG_TAG, string.format("level up %d -> %d, unlocked %d tiers", levelBefore, levelAfter, #lastCompletion.unlocked))
   end
-  log("I", LOG_TAG, string.format("job delivered: quote %d, damage %.0f, penalty %d, driven %.0f m, not towed %d, paid %d, xp %d",
-    job.quote, damageValue, penalty, job.drivenM or 0, notTowed, paid, xp))
-  ui_message(string.format("Delivered the %s.\nPaid $%d of the $%d quote, %d Recovery XP.",
+  log("I", LOG_TAG, string.format("job delivered: quote %d, damage %.0f, penalty %d, driven %.0f m, not towed %d, own rig bonus %d, paid %d, xp %d",
+    job.quote, damageValue, penalty, job.drivenM or 0, notTowed, ownRig, paid, xp))
+  ui_message(string.format("Delivered the %s.\nPaid $%d (quote $%d), %d Recovery XP.",
     vehicleLabel(job), paid, job.quote, xp), 10, LOG_TAG, "info")
   endJob(job)
   if overhaul_career_saveSystem and overhaul_career_saveSystem.saveCurrent then
@@ -1179,29 +1224,36 @@ local function snapshotTarget(job)
   end, "energyStorage")
 end
 
--- Records which vehicle carries the target, if any: the player's own vehicles nearby, checked by
+-- The vehicle carrying the target, if any: the player's own or rented vehicles nearby, checked by
 -- carriedFrame, which only finds a support when the target rests on a deck.
-local function captureCarrier(job)
-  job.carrier = nil
+-- Returns the vehicle, its inventory id and the support.
+findCarrier = function(job)
   local target = job.vehicleId and getObjectByID(job.vehicleId)
   local frames = getCarriedFrame()
-  if not (target and frames and getAllVehicles) then return end
+  if not (target and frames and getAllVehicles) then return nil end
   local targetPos = target:getPosition()
   for _, candidate in ipairs(getAllVehicles() or {}) do
     local id = candidate:getID()
     local invId = id ~= job.vehicleId and inventory() and inventory().getInventoryIdFromVehicleId(id)
     if invId and candidate:getPosition():distance(targetPos) <= CARRIER_SEARCH_M then
       local support = frames.capture(target, candidate)
-      if support then
-        local offset = candidate:getRefNodeMatrix():inverse() * target:getRefNodeMatrix()
-        local pos, rot = offset:getPosition(), offset:toEuler()
-        job.carrier = { inventoryId = invId, support = support,
-          offset = { x = pos.x, y = pos.y, z = pos.z, rx = rot.x, ry = rot.y, rz = rot.z } }
-        log("I", LOG_TAG, "target is carried by inventory vehicle " .. tostring(invId))
-        return
-      end
+      if support then return candidate, invId, support end
     end
   end
+  return nil
+end
+
+-- Records which vehicle carries the target, so a reload can put it back on the deck.
+local function captureCarrier(job)
+  job.carrier = nil
+  local target = job.vehicleId and getObjectByID(job.vehicleId)
+  local candidate, invId, support = findCarrier(job)
+  if not candidate then return end
+  local offset = candidate:getRefNodeMatrix():inverse() * target:getRefNodeMatrix()
+  local pos, rot = offset:getPosition(), offset:toEuler()
+  job.carrier = { inventoryId = invId, support = support,
+    offset = { x = pos.x, y = pos.y, z = pos.z, rx = rot.x, ry = rot.y, rz = rot.z } }
+  log("I", LOG_TAG, "target is carried by inventory vehicle " .. tostring(invId))
 end
 
 local function stateForSave()

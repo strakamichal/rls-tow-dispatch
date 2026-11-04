@@ -100,6 +100,15 @@
         skill: { level: 14, fraction: 0.62, toNext: 1190 },
       },
     }),
+    // Delivered with the player's own truck and a trailer rented at the Job Broker depot.
+    ownrig: Object.assign({}, base, {
+      offers: openOffers,
+      lastCompletion: {
+        vehicle: { year: 2016, brand: 'Ibishu', name: 'Pessima 1.8 DX (M)' }, destinationName: 'Sparrows Rest',
+        quote: 4115, penalty: 0, notTowed: 0, drivenM: 40, ownRig: 206, ownRigShare: 0.05, rentedTrailer: true,
+        paid: 4321, xp: 612, skill: { level: 10, fraction: 0.4, toNext: 1800 },
+      },
+    }),
     // A clean delivery that also levels up and unlocks a tier.
     complete: Object.assign({}, base, {
       offers: openOffers,

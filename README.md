@@ -44,6 +44,9 @@ take them.
   exotic or a heavy truck pays about as much as a Job Broker delivery of one.
 - **Care counts:** damage you cause on the way is taken from the payout, at most half of it.
   Cancelling is free until you move the car; after that it costs a fine.
+- **Own rig bonus:** no tow truck yet? Rent a pickup and a car trailer at the Job Broker depot.
+  Once you own your rig, every tow pays 10 % more (5 % with your own truck and a rented
+  trailer).
 - **Part of your RLS career:** XP goes to the RLS Recovery skill (shared with repo and Off-Road
   Recovery), payouts appear in Wallet as recovery income, finished jobs go to the logbook, and
   the board and an active job are saved with your career, even with the car on a flatbed.
@@ -63,11 +66,12 @@ keep it zipped. Start or load an RLS career and open **Tow Dispatch** on the pho
 
 ## How to play
 
-1. Open **Tow Dispatch** and pick a call. Tap **?** in the app for a short guide.
-2. **Accept** it and drive to the car; **Navigate** sets the route.
-3. Load the car on your truck or trailer. Once it leaves its spot, it is your responsibility.
-4. Take it to the green marker at the destination and stop. You get the agreed price minus
-   any damage you caused, and Recovery XP.
+1. Get a tow truck or a car trailer: your own, or rented at the Job Broker depot.
+2. Open **Tow Dispatch** and pick a call. Tap **?** in the app for a short guide.
+3. **Accept** it and drive to the car; **Navigate** sets the route.
+4. Load the car on your truck or trailer. Once it leaves its spot, it is your responsibility.
+5. Take it to the green marker at the destination and stop. You get the agreed price minus
+   any damage you caused, plus a bonus if the rig is your own, and Recovery XP.
 
 One job at a time.
 

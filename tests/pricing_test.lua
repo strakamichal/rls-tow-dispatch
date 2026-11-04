@@ -65,6 +65,23 @@ return function(t)
       end
     end },
 
+    { "own rig bonus: 10 % for an own rig, 5 % for an own vehicle with a rented trailer", function()
+      t.eq(pricing.ownRigBonusShare(true, nil), 0.10, "own flatbed, wheel lift or rope")
+      t.eq(pricing.ownRigBonusShare(true, true), 0.10, "own vehicle and own trailer")
+      t.eq(pricing.ownRigBonusShare(true, false), 0.05, "own vehicle, rented trailer")
+      t.eq(pricing.ownRigBonusShare(false, true), 0, "rented vehicle, own trailer")
+      t.eq(pricing.ownRigBonusShare(false, false), 0, "rented vehicle and trailer")
+      t.eq(pricing.ownRigBonusShare(false, nil), 0, "rented flatbed")
+      t.eq(pricing.ownRigBonusShare(nil, nil), 0, "no rig found")
+    end },
+
+    { "own rig bonus is the share of the quote", function()
+      t.eq(pricing.ownRigBonus(4115, 0.10), 412, "10 %")
+      t.eq(pricing.ownRigBonus(4115, 0.05), 206, "5 %")
+      t.eq(pricing.ownRigBonus(4115, 0), 0, "none")
+      t.eq(pricing.ownRigBonus(NAN, 0.10), 0, "NaN quote")
+    end },
+
     { "invalid numbers do not leak into money", function()
       t.eq(quote(NAN, 2, 11, 1.0), quote(0, 2, 11, 1.0), "NaN distance counts as zero")
       t.eq(quote(2, 2, NAN, 1.0), quote(2, 2, 0, 1.0), "NaN level counts as zero")
