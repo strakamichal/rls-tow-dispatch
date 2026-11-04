@@ -22,6 +22,8 @@ Alternatives:
 - `beamng-board.jpg`, `beamng-active.jpg`: the board and the active job on West Coast with a
   pickup and trailer.
 - `beamng-trailer-top.jpg`: the van on the trailer from above.
+- `beamng-completion-gap.jpg`: the completion screen at Acceler It Auto Sales on The Gap with the
+  rollback ("Towed without damage, full pay"; no bonus row, the rollback was temporary).
 
 The rollback in the The Gap shots is RLS's "Fink Industries Rollback" spawned from the console as
 a temporary vehicle, so those jobs show no own rig bonus.
