@@ -703,14 +703,15 @@ end
 
 local findCarrier
 
--- True when the vehicle is in the player's RLS garage and no organization owns it: not rented at
--- the Job Broker depot, not a company or delivery vehicle. On foot (RLS walking) is not owned.
+-- True when the vehicle is the player's own, with the test RLS employment uses for "your own
+-- service vehicle": in the garage, not marked unowned, no loan type (depot rental, company,
+-- delivery) and no owning organization. On foot (RLS walking) is not owned.
 local function isOwnVehicle(vehicleId)
   local garage = overhaul_career_garage_inventory
   if not (vehicleId and garage and garage.getInventoryIdFromVehicleId and garage.getVehicles) then return false end
   local inventoryId = garage.getInventoryIdFromVehicleId(vehicleId)
   local info = inventoryId and garage.getVehicles()[inventoryId]
-  return info ~= nil and info.owningOrganization == nil
+  return info ~= nil and info.owned ~= false and not info.loanType and not info.owningOrganization
 end
 
 local function isTrailer(vehicle)
@@ -746,9 +747,12 @@ local function completeJob(job, finalConditions)
   local damageValue = jobRules.damage(job.baseline, finalConditions, partValueLookup(job.vehicleId))
   local paid, penalty = pricing.settle(job.quote, damageValue)
   local notTowed, xpFactor = pricing.selfDrive(job.quote, job.drivenM, job.loadedM)
-  local rigOwned, trailerOwned = rigOwnership(job)
+  -- A failed rig check only costs the bonus, never the payout. The bonus shrinks like the XP when
+  -- part of the route was driven instead of towed.
+  local okRig, rigOwned, trailerOwned = pcall(rigOwnership, job)
+  if not okRig then log("W", LOG_TAG, "rig check failed: " .. tostring(rigOwned)); rigOwned, trailerOwned = false, nil end
   local ownRigShare = pricing.ownRigBonusShare(rigOwned, trailerOwned)
-  local ownRig = pricing.ownRigBonus(job.quote, ownRigShare)
+  local ownRig = pricing.ownRigBonus(job.quote * xpFactor, ownRigShare)
   paid = math.max(0, paid - notTowed) + ownRig
   local xp = scaledXp(pricing.xp({ tierBaseXp = job.tierBaseXp, loadedKm = job.loadedM / 1000, jobType = job.jobType }))
   xp = math.floor(xp * xpFactor + 0.5)
