@@ -13,7 +13,6 @@ Once, before 1.0.0; repeat the in-game checks for big changes.
   - **Uninstall mid-job:** active job, save, disable the mod, load the career. RLS must load
     without errors and nothing of the job may be left behind (target vehicle, reservation).
   - **West Coast USA:** a few full jobs; it is the most played RLS map.
-  - **Dispatch+** (police dispatch for RLS) installed alongside: both phone apps work.
 - Watch RLS releases on GitHub (Watch → Custom → Releases) and retest after each one;
   the add-on uses internal RLS calls that can change without notice.
 - Let the RLS authors know about the add-on (Discord or GitHub) and which RLS internals it
