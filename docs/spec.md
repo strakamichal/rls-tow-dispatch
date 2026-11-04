@@ -167,6 +167,7 @@ and Logistics at the same level):
   a dry van pays about 565/min on a 6 km haul, twice a Standard tow; semi trailers pay about
   600–700/min until Logistics adds its bonus from level 30. A Heavy tow passes them at level 25
   (about 900/min) and stays about 15 % above the best trailer at level 48 (1 500 against 1 340).
+  That is intended (decision 2026-11-04): a heavy tow is harder work than hauling a trailer.
 
 `luajit tools/balance.lua [loaded km]` prints the comparison; rerun it when RLS pay changes.
 
