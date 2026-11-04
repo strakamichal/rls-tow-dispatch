@@ -74,7 +74,6 @@ One job at a time.
 - A job started on one map waits there while you travel; a car on a flatbed does not travel
   with you.
 - Tested on The Gap only so far; other RLS maps should work but are not verified.
-- Heavy vehicles (Recovery level 25+) are not tested yet.
 - The app still has developer tools at the bottom (**Debug tools**); release builds hide them.
 
 ## Development
