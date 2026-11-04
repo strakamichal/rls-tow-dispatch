@@ -155,10 +155,13 @@ After the code changes in `docs/release.md` section 1 (version, `debugTools = fa
 16:9, daylight: the board on the phone, a car on a flatbed, the active job card, the completion
 screen with the own rig bonus row.
 
-- [ ] Board
-- [ ] Car on a flatbed
-- [ ] Active job
-- [ ] Completion with bonus
+Taken 2026-11-04 on West Coast without the debug panel, in `.cache/screenshots/` (not committed):
+`beamng-<name>.png` is a 16:9 crop, `beamng-<name>-full.png` the full 2560 × 1440 screen.
+
+- [x] Board — `beamng-board.png` (suggested first image and thumbnail)
+- [x] Car on a flatbed — `beamng-trailer.png` (overheating van steaming on the own tiltdeck)
+- [x] Active job — `beamng-active.png`
+- [x] Completion with bonus — `beamng-completion.png` ("Own rig bonus (+20%)")
 
 ## After the fixes (2026-11-04)
 
