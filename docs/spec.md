@@ -18,7 +18,8 @@ worth the time.
 - A job board with several calls at once and everything needed to choose one.
 - The payout quoted before accepting; short and long jobs pay about the same per minute.
 - Towing, not driving: the job is to carry the car, not to drive it there.
-- A step below Off-Road Recovery in pay and XP.
+- Pay a little above RLS repo per minute (towing takes a truck and more time) and roughly in
+  line with Off-Road Recovery and Job Broker vehicle deliveries; XP a step below Off-Road Recovery.
 - Progress the existing RLS Recovery skill, not a new one.
 - Leave the original RLS repo jobs untouched.
 
@@ -137,22 +138,25 @@ quote = (callout + outboundRate × km to vehicle + loadedRate × km loaded)
 
 - Starting constants: callout **400**, outbound **55/km**, loaded **135/km**; tuned in game.
   Distances are road route lengths.
-- Skill bonus: the RLS repo steps scaled down, `2 × floor(level / 2) / 24`, capped at +200 %
-  (RLS repo goes to +400 %, which ran most jobs into the recovery cap at higher levels).
+- Skill bonus: the RLS repo curve, `4 × floor(level / 2) / 24`, +400 % at level 48.
 - Tier multiplier for tow: the hub's own ladder, so every tier pays more than the one below
   (RLS gives Low Value and Budget the same): Low Value 1.0, Budget 1.15, Standard 1.3,
-  Luxury 1.5, Exotic 1.75, Heavy 2.0. Unlock levels still come from RLS.
+  Luxury 1.55, Exotic 1.85, Heavy 2.2. The top tiers step up faster so expensive cars pay
+  about as well as Job Broker deliveries of the same class. Unlock levels still come from RLS.
 - Job type factor: Tow 1.1, Repo 1.0.
 - Economy multiplier: the RLS `repo` economy section.
 - No speed or time component; the quote is fixed when the offer is created.
 - Skill level is the RLS Recovery skill (`careerSkills-recovery`), which RLS repo and
   Off-Road Recovery share.
-- **Cap:** the quote never exceeds 90 % of what Off-Road Recovery pays for the same
-  distances and skill level, using the recovery economy section (`offroadRecovery`),
-  including the recovery difficulty fee available at that level (0 below level 10, 1 500 from 10, 3 000 from 30;
-  RLS takes the fee per recovery spot, the cap uses the best fee reachable at that level). Recovery reference
-  (RLS 2.8 `jobs/recovery/rewards.lua`):
-  `(1500 + 100/km outbound + 250/km loaded + fee) × (1 + 2p²)`, `p = floor((level − 5) / 2) / 22`.
+- **No cap.** Earlier betas capped the quote at 90 % of Off-Road Recovery and scaled the skill
+  bonus down to +200 %; with that, RLS repo out-earned towing at every tier and level.
+
+Balance reference (2026-11-04, RLS 2.8, 2 km to the car, modelled drive and load times): per
+minute, a 6 km tow pays about 1.1–1.3× RLS repo of the same tier, between a Job Broker delivery
+of the same class with and without the trip back to the player's own car. Repo pays less per
+minute the longer the drive, tow does not, so a 3 km tow pays about as much as repo and a 12 km
+tow up to about 1.6×.
+`luajit tools/balance.lua [loaded km]` prints the comparison; rerun it when RLS pay changes.
 
 ### Towing, not driving
 
@@ -253,7 +257,7 @@ RLS logbook.
    never collide with RLS reservations; the vehicle spawns only on accept.
 7. Destinations follow *Destinations*, including the 500 m minimum road route.
 8. Tow vehicles have one of the listed faults, can drive onto a flatbed and are not deformed.
-9. Quotes follow *Pricing*, including the recovery cap; covered by automated tests.
+9. Quotes follow *Pricing*; covered by automated tests.
 10. Completion pays the quote minus the damage penalty and awards XP as specified,
     shows the breakdown, and appears in Wallet and the logbook.
 11. Cancellation, custody fines and failure cases behave as specified.

@@ -4,11 +4,10 @@ return function(t)
   local TIERS = { 0.75, 1.0, 1.15, 1.35, 1.6, 1.8 }
   local DISTANCES = { 0, 0.5, 1, 2, 3, 5, 8, 12, 20, 40 }
 
-  local function quote(outboundKm, loadedKm, level, tier, jobType, economy, recoveryEconomy)
+  local function quote(outboundKm, loadedKm, level, tier, jobType, economy)
     return (pricing.quote({
       outboundKm = outboundKm, loadedKm = loadedKm, level = level,
       tierMultiplier = tier, jobType = jobType or "repo", economy = economy or 1,
-      recoveryEconomy = recoveryEconomy,
     }))
   end
 
@@ -23,83 +22,44 @@ return function(t)
       t.eq(pricing.repoSkillBonus(-3), 0, "negative level")
     end },
 
-    { "recovery skill bonus follows the RLS recovery curve", function()
-      t.eq(pricing.recoverySkillBonus(5), 0, "level 5")
-      t.near(pricing.recoverySkillBonus(11), 2 * (3 / 22) ^ 2, 1e-9, "level 11")
-      t.eq(pricing.recoverySkillBonus(49), 2, "level 49")
-    end },
-
-    { "recovery difficulty fee by level", function()
-      t.eq(pricing.recoveryDifficultyFee(9), 0, "below 10")
-      t.eq(pricing.recoveryDifficultyFee(10), 1500, "from 10")
-      t.eq(pricing.recoveryDifficultyFee(30), 3000, "from 30")
-    end },
-
-    { "recovery quote matches hand-computed RLS values at fee boundaries", function()
-      -- Level 9: no fee, p = 2/22.  (1500 + 200 + 500) * (1 + 2 * (2/22)^2)
-      t.near(pricing.recoveryQuote(2, 2, 9), 2200 * (1 + 2 * (2 / 22) ^ 2), 1e-9, "level 9")
-      -- Level 10: fee 1500, p = 2/22.
-      t.near(pricing.recoveryQuote(2, 2, 10), 3700 * (1 + 2 * (2 / 22) ^ 2), 1e-9, "level 10")
-      -- Level 30: fee 3000, p = 12/22.
-      t.near(pricing.recoveryQuote(2, 2, 30), 5200 * (1 + 2 * (12 / 22) ^ 2), 1e-9, "level 30")
-    end },
-
-    { "hub skill bonus is the repo steps scaled to +200 %", function()
-      t.eq(pricing.skillBonus(1), 0, "level 1")
-      t.near(pricing.skillBonus(11), 2 * 5 / 24, 1e-9, "level 11")
-      t.eq(pricing.skillBonus(48), 2, "level 48")
-      t.eq(pricing.skillBonus(50), 2, "capped")
+    { "hub skill bonus is the RLS repo curve", function()
+      for level = -3, 52 do
+        t.eq(pricing.skillBonus(level), pricing.repoSkillBonus(level), "level " .. level)
+      end
     end },
 
     { "quote at level 11, Low tier, 2 + 2 km", function()
-      -- (400 + 55*2 + 135*2) * 1.0 * (1 + 5/12) = 1105
-      t.eq(quote(2, 2, 11, 1.0), 1105, "repo")
-      t.eq(quote(2, 2, 11, 1.0, "tow"), 1216, "tow is 1.1x")
+      -- (400 + 55*2 + 135*2) * 1.0 * (1 + 5/6) = 1430
+      t.eq(quote(2, 2, 11, 1.0), 1430, "repo")
+      t.eq(quote(2, 2, 11, 1.0, "tow"), 1573, "tow is 1.1x")
     end },
 
     { "economy multiplier scales the quote", function()
-      t.eq(quote(2, 2, 11, 1.0, "repo", 0.72), 796, "1105 * 0.72")
+      t.eq(quote(2, 2, 11, 1.0, "repo", 0.72), 1030, "1430 * 0.72")
     end },
 
-    { "cap applies to very long heavy jobs", function()
+    { "tow factor applies to higher tiers", function()
+      -- Standard, level 11, 2 + 2 km: 780 * 1.15 * (1 + 5/6) * 1.1 = 1808.95
+      t.eq(quote(2, 2, 11, 1.15, "tow"), 1809, "tow")
+    end },
+
+    { "long heavy jobs are not capped", function()
       local amount, breakdown = pricing.quote({
         outboundKm = 3, loadedKm = 30, level = 30, tierMultiplier = 1.8, jobType = "repo", economy = 1,
       })
-      t.eq(amount, math.floor(0.9 * pricing.recoveryQuote(3, 30, 30) + 0.5), "capped amount")
-      t.truthy(breakdown.capped, "breakdown marks the cap")
+      -- (400 + 55*3 + 135*30) * 1.8 * (1 + 4*15/24) = 29074.5
+      t.eq(amount, 29075, "full formula")
+      t.eq(breakdown.capped, nil, "no cap in the breakdown")
     end },
 
-    { "tow factor applies below the cap and is cut by it above", function()
-      -- Standard, level 11, 2 + 2 km: 780 * 1.15 * (1 + 5/12) * 1.1 = 1397.9
-      t.eq(quote(2, 2, 11, 1.15, "tow"), 1398, "below cap")
-      t.eq(quote(3, 30, 30, 1.8, "tow"), quote(3, 30, 30, 1.8, "repo"), "same cap for both types")
-    end },
-
-    { "cap follows the recovery economy when the RLS sections differ", function()
-      -- Long heavy job with a strong repo economy and a weak recovery economy.
-      local strongRepo = quote(2, 20, 25, 1.8, "repo", 1.5, 0.7)
-      local limit = 0.9 * pricing.recoveryQuote(2, 20, 25) * 0.7
-      t.truthy(strongRepo <= limit + 0.5, "hub stays below what recovery pays now")
-    end },
-
-    { "quote never exceeds 90 % of the equivalent recovery quote", function()
-      for level = 0, 50 do
-        for _, tier in ipairs(TIERS) do
-          for _, outboundKm in ipairs(DISTANCES) do
-            for _, loadedKm in ipairs(DISTANCES) do
-              for _, jobType in ipairs({ "repo", "tow" }) do
-                for _, economy in ipairs({ 0.5, 0.72, 1, 1.4 }) do
-                  for _, recoveryEconomy in ipairs({ 0.5, 1, 1.4 }) do
-                    local limit = 0.9 * pricing.recoveryQuote(outboundKm, loadedKm, level) * recoveryEconomy
-                    local amount = quote(outboundKm, loadedKm, level, tier, jobType, economy, recoveryEconomy)
-                    if amount > limit + 0.5 then
-                      error(string.format("level %d tier %.2f %s out %.1f loaded %.1f econ %.2f/%.2f: %d > %.1f",
-                        level, tier, jobType, outboundKm, loadedKm, economy, recoveryEconomy, amount, limit))
-                    end
-                  end
-                end
-              end
-            end
+    { "quote grows with distance, tier and level", function()
+      for level = 0, 49 do
+        for i = 2, #TIERS do
+          for j = 2, #DISTANCES do
+            local here = quote(2, DISTANCES[j], level, TIERS[i], "tow")
+            t.truthy(here >= quote(2, DISTANCES[j - 1], level, TIERS[i], "tow"), "distance")
+            t.truthy(here >= quote(2, DISTANCES[j], level, TIERS[i - 1], "tow"), "tier")
+            t.truthy(quote(2, DISTANCES[j], level + 1, TIERS[i], "tow") >= here, "level")
           end
         end
       end

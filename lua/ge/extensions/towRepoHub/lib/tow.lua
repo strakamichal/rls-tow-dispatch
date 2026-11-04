@@ -32,9 +32,10 @@ M.VALUE_TIERS = {
 M.HEAVY_TIER = "heavyVeh"
 
 -- Tow pay and XP per tier. RLS gives Low Value and Budget the same pay multiplier and Budget less
--- base XP, so unlocking Budget would bring nothing; tow uses its own ladder instead. Unlock levels
--- still come from RLS.
-M.TIER_PAY = { junkerVeh = 1.0, smallVeh = 1.15, fleetVeh = 1.3, highEndVeh = 1.5, exoticVeh = 1.75, heavyVeh = 2.0 }
+-- base XP, so unlocking Budget would bring nothing; tow uses its own ladder instead. The top tiers
+-- step up faster, so expensive cars pay about as well as RLS Job Broker deliveries of the same
+-- class. Unlock levels still come from RLS.
+M.TIER_PAY = { junkerVeh = 1.0, smallVeh = 1.15, fleetVeh = 1.3, highEndVeh = 1.55, exoticVeh = 1.85, heavyVeh = 2.2 }
 M.TIER_BASE_XP = { junkerVeh = 300, smallVeh = 350, fleetVeh = 500, highEndVeh = 900, exoticVeh = 1400, heavyVeh = 1800 }
 
 -- The RLS tier data with the tow pay multiplier, base XP and label applied.

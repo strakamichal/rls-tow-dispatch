@@ -8,7 +8,6 @@ M.config = {
   outboundPerKm = 55,
   loadedPerKm = 135,
   jobTypeFactor = { tow = 1.1, repo = 1.0 },
-  recoveryCapShare = 0.9,
   maxPenaltyShare = 0.5,
   fineShare = 0.5,
   fineMin = 200,
@@ -17,20 +16,10 @@ M.config = {
   -- whole loaded route was driven.
   selfDriveAllowanceM = 200,
   selfDriveMinPayShare = 0.25,
-  -- Recovery skill pay bonus: the RLS repo steps (every two levels) but up to +200 % instead of
-  -- +400 %, so pay keeps growing with level without running every job into the recovery cap.
-  skillBonusMax = 2,
   -- XP distance factor: (xpDistanceBase + km loaded) / xpDistanceDivisor. Grows about half as fast
   -- as "XP per minute"; 0.5 km gives ~0.71, 7 km ~1.18.
   xpDistanceBase = 9.5,
   xpDistanceDivisor = 14,
-}
-
--- Off-Road Recovery reference values from RLS 2.8 jobs/recovery/rewards.lua.
-local RECOVERY = {
-  callout = 1500,
-  outboundPerKm = 100,
-  loadedPerKm = 250,
 }
 
 local MAX_SKILL_LEVEL = 50
@@ -81,40 +70,12 @@ function M.repoSkillBonus(level)
   return 4 * steps / 24
 end
 
--- The hub's own pay bonus: the RLS repo steps scaled to config.skillBonusMax (+200 % at level 48).
-function M.skillBonus(level)
-  local steps = clamp(math.floor(skillLevel(level) / 2), 0, 24)
-  return M.config.skillBonusMax * steps / 24
-end
-
--- Same curve as RLS Off-Road Recovery (jobs/recovery/vehiclePool.lua): quadratic, +200 % at level 49.
-function M.recoverySkillBonus(level)
-  local clamped = clamp(skillLevel(level), 1, MAX_SKILL_LEVEL)
-  local steps = clamp(math.floor((clamped - 5) / 2), 0, 22)
-  local progress = steps / 22
-  return 2 * progress * progress
-end
-
--- The best recovery difficulty fee a player of this level can reach.
-function M.recoveryDifficultyFee(level)
-  local clamped = skillLevel(level)
-  if clamped >= 30 then return 3000 end
-  if clamped >= 10 then return 1500 end
-  return 0
-end
-
--- Recovery quote before the economy multiplier, used as the cap reference.
-function M.recoveryQuote(outboundKm, loadedKm, level)
-  local base = RECOVERY.callout
-    + RECOVERY.outboundPerKm * distanceKm(outboundKm)
-    + RECOVERY.loadedPerKm * distanceKm(loadedKm)
-    + M.recoveryDifficultyFee(level)
-  return base * (1 + M.recoverySkillBonus(level))
-end
+-- The hub's pay bonus is the RLS repo curve: tow shares the Recovery skill with repo and,
+-- because it makes the player tow, should pay at least as well at every level.
+M.skillBonus = M.repoSkillBonus
 
 -- args: outboundKm, loadedKm, level (Recovery skill, shared by RLS repo and recovery),
---       tierMultiplier, jobType ("tow" | "repo"), economy (RLS "repo" section),
---       recoveryEconomy (RLS "offroadRecovery" section, defaults to economy)
+--       tierMultiplier, jobType ("tow" | "repo"), economy (RLS "repo" section)
 -- Returns the rounded quote and a breakdown for the UI.
 function M.quote(args)
   local cfg = M.config
@@ -122,18 +83,13 @@ function M.quote(args)
   local loadedKm = distanceKm(args.loadedKm)
   local tierMultiplier = tierMultiplierOf(args.tierMultiplier)
   local economy = economyOf(args.economy)
-  local recoveryEconomy = economyOf(args.recoveryEconomy or economy)
   local bonus = M.skillBonus(args.level)
   local typeFactor = jobTypeFactor(args.jobType)
 
   local base = cfg.callout + cfg.outboundPerKm * outboundKm + cfg.loadedPerKm * loadedKm
-  local raw = base * tierMultiplier * (1 + bonus) * typeFactor * economy
-  -- Compared with what Off-Road Recovery actually pays now, so the hub stays below it
-  -- even when the two RLS economy sections differ.
-  local cap = cfg.recoveryCapShare * M.recoveryQuote(outboundKm, loadedKm, args.level) * recoveryEconomy
-  local capped = raw > cap
+  local amount = base * tierMultiplier * (1 + bonus) * typeFactor * economy
 
-  return round(math.min(raw, cap)), {
+  return round(amount), {
     callout = cfg.callout,
     outbound = cfg.outboundPerKm * outboundKm,
     loaded = cfg.loadedPerKm * loadedKm,
@@ -141,8 +97,6 @@ function M.quote(args)
     skillBonus = bonus,
     jobTypeFactor = typeFactor,
     economy = economy,
-    recoveryEconomy = recoveryEconomy,
-    capped = capped,
   }
 end
 

@@ -351,7 +351,7 @@ local function buildOffer(state, level, fromPos, jobType, info, tierKey, tier, d
   local quote = pricing.quote({
     outboundKm = outboundM / 1000, loadedKm = loadedM / 1000, level = level,
     tierMultiplier = tier.payMultiplier, jobType = jobType,
-    economy = economy("repo"), recoveryEconomy = economy("offroadRecovery"),
+    economy = economy("repo"),
   })
 
   return {

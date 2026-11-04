@@ -27,7 +27,8 @@ The first release: run a tow business in your RLS career.
 
 ### Pay and progression
 - The payout is agreed up front. Short and long tows pay about the same per minute, so long
-  routes are worth taking; tow work pays a step below Off-Road Recovery.
+  routes are worth taking. Towing pays a little more than RLS repo work and about as much as a
+  Job Broker delivery of the same class of car; expensive cars and heavy trucks pay the most.
 - Jobs give XP to the RLS Recovery skill, shared with repo and Off-Road Recovery. Tiers unlock
   at the same levels as RLS repo, and a job that levels you up says so.
 - Towing pays, driving does not: driving the customer's car a short way onto your truck is
