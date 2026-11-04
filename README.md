@@ -7,7 +7,7 @@ towing them home or to a service.
 
 > **Status:** playable beta, not released yet. Tested on The Gap and West Coast USA with RLS 2.8.0.
 
-![Tow it, don't drive it: a rollback carrying an overheating car at sunset, with the Tow Dispatch phone app](docs/images/promo-delivery.jpg)
+![Take the call: the job board in the Tow Dispatch phone app](docs/images/promo-board.jpg)
 
 ## What you do
 
@@ -16,7 +16,7 @@ The owner calls dispatch. You pick the call on your phone, drive out with your t
 car trailer, load the car and bring it to the owner's home or to a dealership's service bay.
 The price is agreed before you leave, so you always know what a job is worth.
 
-![Take the call: the job board in the Tow Dispatch phone app](docs/images/promo-board.jpg)
+![Tow it, don't drive it: a rollback carrying an overheating car at sunset, with the Tow Dispatch phone app](docs/images/promo-delivery.jpg)
 
 As your Recovery skill grows, bigger and pricier calls open up: from cheap runabouts to
 luxury cars, exotics and heavy trucks. Better jobs pay better, and a bigger truck lets you
