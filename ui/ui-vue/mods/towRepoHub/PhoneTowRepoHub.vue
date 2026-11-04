@@ -3,7 +3,7 @@
     <main class="hub-app">
       <header class="topbar">
         <div class="brand">
-          <span class="brand-mark"><svg viewBox="0 0 24 24"><path :d="icons.tow" /></svg></span>
+          <span class="brand-mark"><svg viewBox="0 0 24 24"><path :d="icons.tow" fill-rule="evenodd" /></svg></span>
           <div>
             <strong>Tow Dispatch</strong>
             <small>Roadside &amp; recovery</small>
@@ -52,7 +52,7 @@
           <div class="card-head">
             <div class="title">
               <span class="badge" :class="job.jobType">
-                <svg viewBox="0 0 24 24"><path :d="job.jobType === 'tow' ? icons.tow : icons.key" /></svg>
+                <svg viewBox="0 0 24 24"><path :d="job.jobType === 'tow' ? icons.tow : icons.key" fill-rule="evenodd" /></svg>
                 {{ shortTier(job.tierLabel) }}
               </span>
               <h3 class="vehicle wrap">{{ vehicleLabel(job) }}</h3>
@@ -147,7 +147,7 @@
           <div class="card-head">
             <div class="title">
               <span class="badge" :class="offer.jobType">
-                <svg viewBox="0 0 24 24"><path :d="offer.jobType === 'tow' ? icons.tow : icons.key" /></svg>
+                <svg viewBox="0 0 24 24"><path :d="offer.jobType === 'tow' ? icons.tow : icons.key" fill-rule="evenodd" /></svg>
                 {{ shortTier(offer.tierLabel) }}
                 <span class="expires" :class="{ soon: offer.expiresInS < 180 }" title="Offer expires in">
                   <svg viewBox="0 0 24 24"><path :d="icons.clock" /></svg>{{ duration(offer.expiresInS) }}
@@ -185,7 +185,7 @@
         </article>
 
         <div v-if="!availableCount" class="empty">
-          <span class="empty-mark"><svg viewBox="0 0 24 24"><path :d="icons.tow" /></svg></span>
+          <span class="empty-mark"><svg viewBox="0 0 24 24"><path :d="icons.tow" fill-rule="evenodd" /></svg></span>
           <strong>{{ state.filling ? 'Looking for jobs…' : 'No jobs for you right now' }}</strong>
           <span>{{ state.filling ? 'Calls come in one by one; the first ones are on their way.' : 'New jobs come in over time. Check back later.' }}</span>
         </div>
@@ -203,7 +203,7 @@
           </button>
           <template v-if="showLocked">
             <article v-for="offer in lockedOffers" :key="offer.id" class="locked-row" :class="offer.jobType">
-              <svg viewBox="0 0 24 24"><path :d="offer.jobType === 'tow' ? icons.tow : icons.key" /></svg>
+              <svg viewBox="0 0 24 24"><path :d="offer.jobType === 'tow' ? icons.tow : icons.key" fill-rule="evenodd" /></svg>
               <div class="locked-main">
                 <span class="locked-tier">{{ shortTier(offer.tierLabel) }}</span>
                 <span class="locked-vehicle">{{ vehicleLabel(offer) }}</span>
@@ -369,7 +369,8 @@ const POLL_MS = 1000
 // Material Design icon paths (Apache 2.0), plus a simple weight icon.
 const icons = {
   // Tow truck with boom and hook; the same silhouette as the app icon (icon.svg).
-  tow: 'M2 12h10.6L4.6 5.4l1-1 7.4 7.4V8h4.5l3.5 4.5V17h-1.6a2.4 2.4 0 0 0-4.8 0H9.4a2.4 2.4 0 0 0-4.8 0H2zM4.4 5h1v3.2h-1zM3 7.4h1v1.8H3zm0 1h3.4v.8H3zM7 15.6a1.9 1.9 0 1 0 0 3.8 1.9 1.9 0 1 0 0-3.8zm10.4 0a1.9 1.9 0 1 0 0 3.8 1.9 1.9 0 1 0 0-3.8z',
+  // Tow truck from Pinhead Map Icons (CC0, pinhead:tow-truck), scaled to 24 units; same as icon.svg.
+  tow: 'M16.815 17.625a1.605 1.605 0 1 0 3.21 0a1.605 1.605 0 1 0 -3.21 0m-11.25 0a1.605 1.605 0 1 0 3.21 0a1.605 1.605 0 1 0 -3.21 0M21.645 12.81V7.995H13.605V12.81H12L5.565 4.77H2.355v4.83H0.75v1.605h3.21v-4.5L8.79 12.81H0.75v4.815h3.21c0 -1.755 1.455 -3.21 3.225 -3.21c1.755 0 3.21 1.455 3.21 3.21h4.815c0 -1.755 1.455 -3.21 3.225 -3.21c1.755 0 3.21 1.455 3.21 3.21H23.25V14.415zm-1.605 0H15.21V9.6h4.83z',
   key: 'M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z',
   pin: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z',
   route: 'M19 15.18V7c0-2.21-1.79-4-4-4s-4 1.79-4 4v10c0 1.1-.9 2-2 2s-2-.9-2-2V8.82C8.16 8.4 9 7.3 9 6c0-1.66-1.34-3-3-3S3 4.34 3 6c0 1.3.84 2.4 2 2.82V17c0 2.21 1.79 4 4 4s4-1.79 4-4V7c0-1.1.9-2 2-2s2 .9 2 2v8.18c-1.16.41-2 1.51-2 2.82 0 1.66 1.34 3 3 3s3-1.34 3-3c0-1.3-.84-2.4-2-2.82z',
@@ -632,7 +633,7 @@ svg { width: 1em; height: 1em; fill: currentColor; flex: none; }
   border-radius: 8px;
   background: $amber;
   color: $asphalt;
-  font-size: 20px;
+  font-size: 27px; // the tow truck is wide and low, so it needs more than the 24-unit box
 }
 // A pill the same height and outline as the round help button next to it.
 .level {
@@ -988,7 +989,7 @@ svg { width: 1em; height: 1em; fill: currentColor; flex: none; }
   letter-spacing: .08em;
   text-transform: uppercase;
   color: $muted;
-  svg { font-size: 15px; }
+  svg { font-size: 20px; }
   &.tow svg { color: $tow; }
   &.repo svg { color: $repo; }
 }
@@ -1073,7 +1074,7 @@ svg { width: 1em; height: 1em; fill: currentColor; flex: none; }
   background: rgba(255, 184, 28, .1);
   border: 1px dashed rgba(255, 184, 28, .45);
   color: $amber;
-  font-size: 28px;
+  font-size: 38px;
 }
 .hint { margin: 4px; font-size: .75em; text-align: center; color: $muted; }
 .footer { margin-top: 12px; font-size: .7em; text-align: center; color: $muted; opacity: .6; }

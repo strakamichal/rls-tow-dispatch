@@ -1,4 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Tow truck from Pinhead Map Icons (CC0-1.0, pinhead:tow-truck); same shape as icons.tow in
+       PhoneTowRepoHub.vue. -->
   <defs>
     <clipPath id="tile"><rect width="128" height="128" rx="28"/></clipPath>
     <pattern id="hazard" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
@@ -8,8 +10,8 @@
   <g clip-path="url(#tile)">
     <rect width="128" height="128" fill="#ffb81c"/>
     <rect y="110" width="128" height="18" fill="url(#hazard)"/>
-    <g transform="translate(16 12) scale(4)" fill="#15171a">
-      <path d="M2 12h10.6L4.6 5.4l1-1 7.4 7.4V8h4.5l3.5 4.5V17h-1.6a2.4 2.4 0 0 0-4.8 0H9.4a2.4 2.4 0 0 0-4.8 0H2zM4.4 5h1v3.2h-1zM3 7.4h1v1.8H3zm0 1h3.4v.8H3zM7 15.6a1.9 1.9 0 1 0 0 3.8 1.9 1.9 0 1 0 0-3.8zm10.4 0a1.9 1.9 0 1 0 0 3.8 1.9 1.9 0 1 0 0-3.8z"/>
+    <g transform="translate(18.4 9.4) scale(3.8)" fill="#15171a">
+      <path d="M16.815 17.625a1.605 1.605 0 1 0 3.21 0a1.605 1.605 0 1 0 -3.21 0m-11.25 0a1.605 1.605 0 1 0 3.21 0a1.605 1.605 0 1 0 -3.21 0M21.645 12.81V7.995H13.605V12.81H12L5.565 4.77H2.355v4.83H0.75v1.605h3.21v-4.5L8.79 12.81H0.75v4.815h3.21c0 -1.755 1.455 -3.21 3.225 -3.21c1.755 0 3.21 1.455 3.21 3.21h4.815c0 -1.755 1.455 -3.21 3.225 -3.21c1.755 0 3.21 1.455 3.21 3.21H23.25V14.415zm-1.605 0H15.21V9.6h4.83z"/>
     </g>
   </g>
 </svg>
