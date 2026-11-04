@@ -3,6 +3,23 @@
 How to ship a version of Tow Dispatch. Written for the first release, 1.0.0; later releases
 follow the same steps.
 
+## 0. Before the first release
+
+Once, before 1.0.0; repeat the in-game checks for big changes.
+
+- In game:
+  - **New career:** level 1, starting money, no tow truck. Can a new player take a first
+    Low Value job? If it needs a car trailer or a cheap truck, say so in the in-app help.
+  - **Uninstall mid-job:** active job, save, disable the mod, load the career. RLS must load
+    without errors and nothing of the job may be left behind (target vehicle, reservation).
+  - **West Coast USA:** a few full jobs; it is the most played RLS map.
+  - **Dispatch+** (police dispatch for RLS) installed alongside: both phone apps work.
+- Watch RLS releases on GitHub (Watch → Custom → Releases) and retest after each one;
+  the add-on uses internal RLS calls that can change without notice.
+- Let the RLS authors know about the add-on (Discord or GitHub) and which RLS internals it
+  uses (see docs/rls-integration.md).
+- `CHANGELOG.md` has the section for the version.
+
 ## 1. Prepare the code
 
 1. Start from a clean `main` that is pushed (`git status`, `git log origin/main..`).

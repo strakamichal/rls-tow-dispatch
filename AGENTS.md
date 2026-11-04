@@ -1,11 +1,14 @@
-# Tow & Repo Hub — project guide
+# Tow Dispatch — project guide
 
 Everything in this repo is written in English: code, comments, docs, commits, issues.
 
 ## What this is
 
-A BeamNG.drive mod that adds a repo job board to RLS Career Overhaul.
-Specification: [docs/spec.md](docs/spec.md).
+Tow Dispatch, a BeamNG.drive add-on for RLS Career Overhaul: a tow business in the RLS career
+with a phone app, a job board of breakdown calls and quotes up front. Internal names still use
+the original project name (`towRepoHub`: extension, phone app id, save folder); keep them, or
+existing saves lose their jobs.
+Specification: [docs/spec.md](docs/spec.md). Player-facing changes: [CHANGELOG.md](CHANGELOG.md).
 
 ## Target versions
 
@@ -26,6 +29,13 @@ The repo root is the mod root; the packaged zip mirrors it.
 - `tests/` — Lua tests for pure logic, run outside the game
 - `tools/` — packaging and dev scripts
 - `docs/` — specification and notes
+
+## Save format
+
+The career save (`career/towRepoHub/state.json`, `lib/persist.lua`) carries `version`.
+A save with another version is discarded, which drops the player's board and active job.
+So any change to the saved shape must bump `M.VERSION` **and** add a migration from every
+older version, with a test that loads an old save. Never bump the version without one.
 
 ## Integrating with RLS
 

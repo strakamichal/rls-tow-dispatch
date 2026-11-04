@@ -1,0 +1,51 @@
+name: Bug report
+description: Something in Tow Dispatch does not work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Tow Dispatch is made in spare time, so a clear report helps a lot.
+        Please check that the bug happens with only RLS Career Overhaul and Tow Dispatch enabled,
+        if you can.
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Tow Dispatch, RLS Career Overhaul and BeamNG.drive. The app footer shows the RLS version.
+      placeholder: Tow Dispatch 1.0.0, RLS 2.8.0, BeamNG.drive 0.40.4
+    validations:
+      required: true
+  - type: input
+    id: map
+    attributes:
+      label: Map
+      placeholder: The Gap, West Coast USA, …
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Accept a Budget job with a flat tyre
+        2. Load the car on a flatbed
+        3. …
+  - type: textarea
+    id: mods
+    attributes:
+      label: Other mods
+      description: Other enabled mods, especially RLS add-ons and maps.
+  - type: textarea
+    id: log
+    attributes:
+      label: beamng.log and screenshots
+      description: |
+        Attach `beamng.log` from the BeamNG user folder (launcher → Manage User Folder → Open in
+        Explorer), right after the problem, and screenshots of the phone if useful.
