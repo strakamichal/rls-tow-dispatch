@@ -752,7 +752,7 @@ local function completeJob(job, finalConditions)
   local okRig, rigOwned, trailerOwned = pcall(rigOwnership, job)
   if not okRig then log("W", LOG_TAG, "rig check failed: " .. tostring(rigOwned)); rigOwned, trailerOwned = false, nil end
   local ownRigShare = pricing.ownRigBonusShare(rigOwned, trailerOwned)
-  local ownRig = pricing.ownRigBonus(job.quote * xpFactor, ownRigShare)
+  local ownRig = pricing.ownRigBonus(job.quote, ownRigShare, xpFactor)
   paid = math.max(0, paid - notTowed) + ownRig
   local xp = scaledXp(pricing.xp({ tierBaseXp = job.tierBaseXp, loadedKm = job.loadedM / 1000, jobType = job.jobType }))
   xp = math.floor(xp * xpFactor + 0.5)
@@ -775,7 +775,7 @@ local function completeJob(job, finalConditions)
     vehicle = { brand = job.brand, name = job.name, year = job.year },
     destinationName = job.destinationName,
     quote = job.quote, penalty = penalty, notTowed = notTowed, drivenM = job.drivenM or 0, paid = paid, xp = xp,
-    ownRig = ownRig, ownRigShare = ownRigShare, rentedTrailer = trailerOwned == false,
+    ownRig = ownRig, ownRigShare = ownRigShare * xpFactor, rentedTrailer = trailerOwned == false,
     skill = skillProgress(),
   }
   -- Level up, and the tow tiers that unlocked with it, for the completion screen.

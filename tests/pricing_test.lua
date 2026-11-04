@@ -80,6 +80,9 @@ return function(t)
       t.eq(pricing.ownRigBonus(4115, 0.05), 206, "5 %")
       t.eq(pricing.ownRigBonus(4115, 0), 0, "none")
       t.eq(pricing.ownRigBonus(NAN, 0.10), 0, "NaN quote")
+      t.eq(pricing.ownRigBonus(4115, 0.10, 0.5), 206, "half the route driven: half the bonus")
+      t.eq(pricing.ownRigBonus(4115, 0.10, 0), 0, "all driven: no bonus")
+      t.eq(pricing.ownRigBonus(4115, 0.10, NAN), 412, "unknown towed share counts as towed")
     end },
 
     { "invalid numbers do not leak into money", function()

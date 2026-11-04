@@ -137,8 +137,11 @@ function M.ownRigBonusShare(rigOwned, trailerOwned)
   return M.config.ownRigBonus
 end
 
-function M.ownRigBonus(quote, share)
-  return round(math.max(0, finite(quote, 0)) * clamp(finite(share, 0), 0, 1))
+-- towedShare (0..1, default 1) is the part of the route really towed, so a driven route earns
+-- less bonus, like the XP.
+function M.ownRigBonus(quote, share, towedShare)
+  local towed = clamp(finite(towedShare, 1), 0, 1)
+  return round(math.max(0, finite(quote, 0)) * clamp(finite(share, 0), 0, 1) * towed)
 end
 
 -- Fixed fine for abandoning or losing a vehicle in custody.
