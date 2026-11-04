@@ -273,7 +273,7 @@
         </template>
       </section>
 
-      <footer v-if="state" class="footer">RLS {{ state.rlsVersion || 'not found' }}</footer>
+      <footer v-if="state" class="footer">Tow Dispatch {{ state.version }} &ndash; RLS {{ state.rlsVersion || 'not found' }}</footer>
     </main>
 
     <div v-if="helpOpen" class="overlay" @click.self="helpOpen = false">

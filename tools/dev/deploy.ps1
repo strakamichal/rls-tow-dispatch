@@ -1,11 +1,12 @@
 # Installs the add-on into the BeamNG user folder for testing.
 #
-#   tools/dev/deploy.ps1            # unpacked copy in mods/unpacked/tow_repo_hub (fast iteration)
+#   tools/dev/deploy.ps1            # unpacked copy in mods/unpacked/tow_dispatch (fast iteration)
 #   tools/dev/deploy.ps1 -Zip       # packaged zip in mods/, as players install it
 #   tools/dev/deploy.ps1 -UserFolder "D:\BeamNG\userfolder"
 #
 # After an unpacked deploy, Lua changes reload in game with Ctrl+L; UI changes need Ctrl+F5
-# or a game restart. Unverified on a real install yet — fix paths here when they differ.
+# or a game restart. Copies under the old name (tow_repo_hub) are removed, so the game never
+# loads the mod twice.
 
 param(
   [switch]$Zip,
@@ -14,7 +15,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Repo = Resolve-Path (Join-Path $PSScriptRoot "..\..")
-$ModName = "tow_repo_hub"
+$ModName = "tow_dispatch"
+$OldModNames = @("tow_repo_hub")
 $ModDirs = @("lua", "scripts", "gameplay", "ui")
 
 function Find-UserFolder {
@@ -44,6 +46,12 @@ if (-not $present) { throw "Nothing to deploy yet: none of $($ModDirs -join ', '
 $zipPath = Join-Path $Mods "$ModName.zip"
 $unpackedPath = Join-Path $Mods "unpacked\$ModName"
 
+foreach ($old in $OldModNames) {
+  foreach ($path in @((Join-Path $Mods "$old.zip"), (Join-Path $Mods "unpacked\$old"))) {
+    if (Test-Path $path) { Remove-Item $path -Recurse -Force; Write-Host "Removed old copy $path" }
+  }
+}
+
 if ($Zip) {
   if (Test-Path $unpackedPath) { Remove-Item $unpackedPath -Recurse -Force }
   # tar.exe (bsdtar, Windows 10+) writes forward-slash entries; Compress-Archive in
@@ -54,7 +62,11 @@ if ($Zip) {
     tar.exe -a -c -f $zipPath @present LICENSE
     if ($LASTEXITCODE -ne 0) { throw "tar.exe failed" }
   } finally { Pop-Location }
-  Write-Host "Deployed $zipPath"
+  # The same zip in dist/, as tools/package.sh writes it (zip is missing in Git Bash on Windows).
+  $dist = Join-Path $Repo "dist"
+  New-Item -ItemType Directory -Force $dist | Out-Null
+  Copy-Item $zipPath (Join-Path $dist "$ModName.zip") -Force
+  Write-Host "Deployed $zipPath (copy in dist/)"
 } else {
   if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
   foreach ($dir in $present) {
@@ -63,3 +75,5 @@ if ($Zip) {
   }
   Write-Host "Deployed $unpackedPath"
 }
+# robocopy reports copied files with exit codes 1–7; they are not errors.
+exit 0

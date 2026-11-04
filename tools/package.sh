@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Packages the mod folders into dist/tow_repo_hub.zip for the BeamNG mods folder.
+# Packages the mod folders into dist/tow_dispatch.zip for the BeamNG mods folder.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 MOD_DIRS=(lua scripts gameplay ui)
-OUT=dist/tow_repo_hub.zip
+OUT=dist/tow_dispatch.zip
 BUILD_FILE=lua/ge/extensions/towRepoHub/lib/build.lua
 
 # A release must not ship the debug tools; --debug packages a test build anyway.

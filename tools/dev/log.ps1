@@ -22,7 +22,7 @@ if (-not $UserFolder) {
 }
 
 $log = Join-Path $UserFolder "beamng.log"
-$pattern = "towRepoHub|tow_repo_hub|\|E\||\|W\||error|traceback"
+$pattern = "towRepoHub|tow_dispatch|tow_repo_hub|\|E\||\|W\||error|traceback"
 
 if ($All) {
   Get-Content $log -Tail $Tail -Wait

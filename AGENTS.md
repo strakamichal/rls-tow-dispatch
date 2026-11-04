@@ -52,13 +52,13 @@ older version, with a test that loads an old save. Never bump the version withou
 - RLS source for reference: `tools/fetch-rls.sh` → `.cache/rls` (source files only,
   not committed). Search there instead of the GitHub API. Integration notes:
   [docs/rls-integration.md](docs/rls-integration.md).
-- Package: `tools/package.sh` → `dist/tow_repo_hub.zip`. Releases ship without the phone app's
-  debug tools: set `debugTools = false` in `lua/ge/extensions/towRepoHub/lib/build.lua` first;
+- Package: `tools/package.sh` → `dist/tow_dispatch.zip`. Releases ship without the phone app's
+  debug tools: `debugTools = false` in `lua/ge/extensions/towRepoHub/lib/build.lua` (turn it on only locally);
   the script refuses to package while it is on (`--debug` packages a test build anyway).
 
 On the Windows gaming PC (PowerShell; scripts not yet verified on a real install):
 
-- Deploy unpacked for fast iteration: `tools/dev/deploy.ps1` → `mods/unpacked/tow_repo_hub`.
+- Deploy unpacked for fast iteration: `tools/dev/deploy.ps1` → `mods/unpacked/tow_dispatch`.
   Reload Lua in game with Ctrl+L; UI changes need Ctrl+F5 or a restart.
 - Deploy as players install it: `tools/dev/deploy.ps1 -Zip`.
 - Follow the log: `tools/dev/log.ps1` (filtered to hub messages, errors and warnings).

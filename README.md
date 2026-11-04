@@ -103,7 +103,7 @@ for how the add-on uses RLS and [docs/release.md](docs/release.md) for releasing
 
 - Tests (LuaJIT): `tools/test.sh`
 - Deploy to the game for testing (Windows): `tools/dev/deploy.ps1`
-- Package: `tools/package.sh` → `dist/tow_repo_hub.zip`
+- Package: `tools/package.sh` → `dist/tow_dispatch.zip`
 
 ## License
 

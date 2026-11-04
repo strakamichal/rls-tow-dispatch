@@ -1,0 +1,85 @@
+# Builds the release zip and drafts a GitHub release when a version tag is pushed.
+#
+#   git tag -a v1.0.0 -m "Tow Dispatch 1.0.0" && git push origin v1.0.0
+#
+# The release is created as a draft: check it on GitHub and press Publish. A tag with a suffix
+# (v1.0.0-beta.1) becomes a pre-release. Run the workflow by hand (Actions → release → Run
+# workflow) to build the zip as an artifact without a tag or a release.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LuaJIT and zip
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq luajit zip
+
+      - name: Run tests
+        run: tools/test.sh
+
+      - name: Read the version
+        id: version
+        run: |
+          version=$(sed -nE 's/^\s*version\s*=\s*"([^"]+)".*/\1/p' lua/ge/extensions/towRepoHub/lib/build.lua)
+          [ -n "$version" ] || { echo "::error::No version in lib/build.lua"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version $version in lib/build.lua"
+            exit 1
+          fi
+
+      # Refuses to package while debugTools is on (tools/package.sh).
+      - name: Package
+        run: tools/package.sh
+
+      - name: Check the zip
+        run: |
+          unzip -Z1 dist/tow_dispatch.zip > entries.txt
+          if grep -q '\\' entries.txt; then echo "::error::Zip entries use backslashes"; exit 1; fi
+          bad=$(grep -vE '^(lua|scripts|gameplay|ui)/|^LICENSE$' entries.txt || true)
+          if [ -n "$bad" ]; then echo "::error::Unexpected files in the zip:"; echo "$bad"; exit 1; fi
+          for dir in lua scripts gameplay ui; do
+            grep -q "^$dir/" entries.txt || { echo "::error::$dir/ is missing from the zip"; exit 1; }
+          done
+          echo "$(wc -l < entries.txt) entries, $(du -h dist/tow_dispatch.zip | cut -f1)"
+
+      - name: Upload the zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: tow_dispatch-${{ steps.version.outputs.version }}
+          path: dist/tow_dispatch.zip
+
+      # Notes: the CHANGELOG section of this version (or of its base version for a pre-release).
+      - name: Draft the GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          section() { awk -v v="$1" '$0 ~ "^## " v "( |$)" {on=1; next} /^## / {on=0} on' CHANGELOG.md; }
+          section "$VERSION" > notes.md
+          [ -s notes.md ] || section "${VERSION%%-*}" > notes.md
+          [ -s notes.md ] || { echo "::error::No CHANGELOG section for $VERSION"; exit 1; }
+          {
+            echo
+            echo "## Install"
+            echo
+            echo "Requires BeamNG.drive 0.40 and RLS Career Overhaul 2.8.x. Put \`tow_dispatch.zip\` into"
+            echo "your BeamNG \`mods\` folder next to RLS and keep it zipped, then open **Tow Dispatch** on"
+            echo "the career phone."
+          } >> notes.md
+          prerelease=""
+          case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/tow_dispatch.zip --draft $prerelease \
+            --title "Tow Dispatch $VERSION" --notes-file notes.md

@@ -2,6 +2,7 @@
 // towRepoHub_core.getState returns; keep them in step when the payload changes.
 (function () {
   const base = {
+    version: '1.0.0',
     rlsVersion: '2.8.0',
     rlsVersionStatus: 'ok',
     supportedVersion: '2.8.x',

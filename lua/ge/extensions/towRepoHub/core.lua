@@ -296,7 +296,8 @@ end
 
 -- Debug tools (lib/build.debugTools): short jobs for testing. Pickups within DEBUG_MAX_PICKUP_M of
 -- the player, the nearest destination and lower minimums. Toggled from the phone app.
-local DEBUG_TOOLS = require("towRepoHub/lib/build").debugTools == true
+local BUILD = require("towRepoHub/lib/build")
+local DEBUG_TOOLS = BUILD.debugTools == true
 local debugShortJobs = false
 local DEBUG_MAX_PICKUP_M = 1500
 local DEBUG_MIN_PICKUP_FROM_PLAYER_M = 50
@@ -1505,6 +1506,7 @@ local function getState()
   if not versionStatus then readRlsVersion() end
   local level = careerActive() and skillLevel() or 0
   local state = {
+    version = BUILD.version,
     rlsVersion = versionString,
     rlsVersionStatus = versionStatus,
     supportedVersion = rlsVersion.SUPPORTED,

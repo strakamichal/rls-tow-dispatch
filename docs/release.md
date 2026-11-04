@@ -21,52 +21,59 @@ Once, before 1.0.0; repeat the in-game checks for big changes.
 
 ## 1. Prepare the code
 
+Done for 1.0.0; for a later version only the version number and the CHANGELOG change.
+
 1. Start from a clean `main` that is pushed (`git status`, `git log origin/main..`).
-2. Version: add `version = "1.0.0"` to `lua/ge/extensions/towRepoHub/lib/build.lua`, send it
-   in `getState` and show it in the phone footer next to the RLS version
-   (`Tow Dispatch 1.0.0 · RLS 2.8.0`). Update `tools/dev/preview/states.js`.
-3. Switch the debug tools off: `debugTools = false` in `lib/build.lua`. The phone then gets no
-   `state.debug`: no debug panel, no teleport buttons, and the debug functions refuse to run.
-4. Name the zip after the mod: `tow_dispatch.zip` instead of `tow_repo_hub.zip`.
-   - `tools/package.sh`: `OUT=dist/tow_dispatch.zip`.
-   - `tools/dev/deploy.ps1`: `$ModName = "tow_dispatch"`. Before the first deploy under the new
-     name, remove `mods/unpacked/tow_repo_hub` and `mods/tow_repo_hub.zip` from the user folder,
-     or the game loads the mod twice.
-   - `README.md` and `AGENTS.md`: the new file name.
-   - Nothing inside the mod depends on the zip name: the extension (`towRepoHub_core`), the phone
-     app id (`towRepoHub`) and the save folder (`career/towRepoHub`) stay, so existing saves keep
-     their jobs.
+2. Version: `version` in `lua/ge/extensions/towRepoHub/lib/build.lua` (`"1.0.0"`, or
+   `"1.0.0-beta.1"` for a pre-release). The phone footer shows it: `Tow Dispatch 1.0.0 – RLS 2.8.0`.
+3. Debug tools off: `debugTools = false` in the same file (the default on `main`; turn it on only
+   locally for testing). The phone then gets no `state.debug` and the debug functions refuse to run.
+4. `CHANGELOG.md`: a section `## <version>`; replace "unreleased" with the date. The release
+   workflow uses this section as the release notes (a pre-release falls back to its base version).
 5. Run the tests: `tools/test.sh` (or `luajit tests/run.lua tests/*_test.lua` in PowerShell).
-6. Render the phone screens: `tools/dev/preview.ps1` (or `tools/dev/preview.sh` on macOS) and check `list`, `active`, `delivery`,
-   `complete`, `help` and `empty` in `.cache/preview/`: no debug panel, footer with the version.
+6. Render the phone screens: `tools/dev/preview.ps1` and check `list`, `active`, `delivery`,
+   `complete`, `help` and `empty` in `.cache/preview/` (the preview data shows the debug panel;
+   the game does not).
+
+The zip is `tow_dispatch.zip`. Nothing inside the mod depends on the zip name: the extension
+(`towRepoHub_core`), the phone app id (`towRepoHub`) and the save folder (`career/towRepoHub`)
+stay, so existing saves keep their jobs. `tools/dev/deploy.ps1` removes copies under the old name
+(`tow_repo_hub`) from the user folder, so the game never loads the mod twice.
 
 ## 2. Build and install it like a player
 
-1. Package. `tools/package.sh` needs `zip`, which Git Bash on Windows does not have; on Windows
-   use `tools/dev/deploy.ps1 -Zip`, which builds the zip with `tar.exe`, installs it in `mods/`
-   and removes the unpacked copy. Copy that zip to `dist/` for the release.
-2. Check the zip: entries use forward slashes, it contains `lua`, `scripts`, `gameplay`, `ui`
-   and `LICENSE`, and nothing else (no `tests`, `tools`, `docs`, `.cache`).
-3. Restart the game (not just Ctrl+L) and load an RLS career:
+1. On Windows: `tools/dev/deploy.ps1 -Zip` builds `tow_dispatch.zip` with `tar.exe`, installs it in
+   `mods/`, removes the unpacked copy and puts the same zip in `dist/`. (`tools/package.sh` needs
+   `zip`, which Git Bash on Windows does not have; the release workflow uses it on Linux.)
+2. Restart the game (not just Ctrl+L) and load an RLS career:
    - the mod manager lists `tow_dispatch` (only the file name until beamng.com adds metadata);
    - the log shows `towRepoHub: RLS 2.8.0 detected` and `loaded`, and no errors from the mod;
-   - the phone shows **Tow Dispatch** with its icon; offers arrive; no debug panel;
+   - the phone shows **Tow Dispatch** with its icon; offers arrive; no debug panel; the footer
+     shows the version;
    - one full job: accept, load, deliver, payout in Wallet under Recovery, XP;
    - save, reload the save: the board and an active job come back.
 
 ## 3. Publish on GitHub
 
-1. Commit the release changes (`Release 1.0.0`) and push.
-2. Tag and release with the zip attached:
+`.github/workflows/release.yml` does the build when a version tag is pushed:
+
+1. Commit the release changes (`Release 1.0.0`) and push; CI runs the tests.
+2. Tag and push the tag:
 
    ```bash
    git tag -a v1.0.0 -m "Tow Dispatch 1.0.0"
    git push origin v1.0.0
-   gh release create v1.0.0 dist/tow_dispatch.zip --title "Tow Dispatch 1.0.0" --notes-file <notes>
    ```
 
-3. Release notes: what the mod does, requirements, installation, known limits (below).
-4. README: replace "Not released yet" with the install steps and a link to the release.
+3. The workflow runs the tests, checks that the tag matches `version` in `lib/build.lua`, packages
+   the zip (refused while `debugTools` is on), checks its contents (forward slashes; only `lua`,
+   `scripts`, `gameplay`, `ui` and `LICENSE`) and creates a **draft** release with the zip and the
+   CHANGELOG section as notes. A tag with a suffix (`v1.0.0-beta.1`) becomes a pre-release.
+4. Check the draft on GitHub (notes, zip) and press **Publish**. Nothing is public before that.
+5. README: replace "Not released yet" with the install steps and a link to the release.
+
+To try the build without a tag: Actions → release → Run workflow builds the zip as an artifact and
+creates no release.
 
 ## 4. Publish on beamng.com
 
@@ -92,7 +99,7 @@ the in-game mod manager shows the file name, type "unknown" and no author. This 
 ## Known limits to state in the notes
 
 - Built for RLS Career Overhaul 2.8.x on BeamNG 0.40; other RLS versions show a warning.
-- Tested on The Gap (OwnTheBank); other RLS maps should work but are not tested yet.
+- Tested on The Gap (OwnTheBank) and West Coast USA; other RLS maps should work but are not tested yet.
 - A job started on one map waits there while you travel; a car on a flatbed does not travel
   with you.
 - One active job at a time.
