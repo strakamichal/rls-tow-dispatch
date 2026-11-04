@@ -52,7 +52,8 @@
           <div class="card-head">
             <div class="title">
               <span class="badge" :class="job.jobType">
-                <svg viewBox="0 0 24 24"><path :d="job.jobType === 'tow' ? icons.tow : icons.key" fill-rule="evenodd" /></svg>
+                <!-- Every board job is a tow; only a repo job (not offered now) gets a mark. -->
+                <svg v-if="job.jobType !== 'tow'" viewBox="0 0 24 24"><path :d="icons.key" /></svg>
                 {{ shortTier(job.tierLabel) }}
               </span>
               <h3 class="vehicle wrap">{{ vehicleLabel(job) }}</h3>
@@ -147,7 +148,7 @@
           <div class="card-head">
             <div class="title">
               <span class="badge" :class="offer.jobType">
-                <svg viewBox="0 0 24 24"><path :d="offer.jobType === 'tow' ? icons.tow : icons.key" fill-rule="evenodd" /></svg>
+                <svg v-if="offer.jobType !== 'tow'" viewBox="0 0 24 24"><path :d="icons.key" /></svg>
                 {{ shortTier(offer.tierLabel) }}
                 <span class="expires" :class="{ soon: offer.expiresInS < 180 }" title="Offer expires in">
                   <svg viewBox="0 0 24 24"><path :d="icons.clock" /></svg>{{ duration(offer.expiresInS) }}
@@ -203,7 +204,7 @@
           </button>
           <template v-if="showLocked">
             <article v-for="offer in lockedOffers" :key="offer.id" class="locked-row" :class="offer.jobType">
-              <svg viewBox="0 0 24 24"><path :d="offer.jobType === 'tow' ? icons.tow : icons.key" fill-rule="evenodd" /></svg>
+              <svg v-if="offer.jobType !== 'tow'" viewBox="0 0 24 24"><path :d="icons.key" /></svg>
               <div class="locked-main">
                 <span class="locked-tier">{{ shortTier(offer.tierLabel) }}</span>
                 <span class="locked-vehicle">{{ vehicleLabel(offer) }}</span>
