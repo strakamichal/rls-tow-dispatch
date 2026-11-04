@@ -39,8 +39,9 @@ take them.
 - **Progression you can see:** calls above your level are listed as locked, with the payout
   and the level that unlocks them. Tiers unlock at the same Recovery levels as RLS repo.
 - **Fair pay:** short and long tows pay about the same per minute, so long routes are worth
-  taking. Towing pays a little more than repo work, which you simply drive away, and a tow of
-  an exotic or a heavy truck about as much as a Job Broker delivery of one.
+  taking. A typical tow of about 6 km pays a little more per minute than repo work, which you
+  simply drive away; repo pays more for very short drives, towing for long ones. A tow of an
+  exotic or a heavy truck pays about as much as a Job Broker delivery of one.
 - **Care counts:** damage you cause on the way is taken from the payout, at most half of it.
   Cancelling is free until you move the car; after that it costs a fine.
 - **Part of your RLS career:** XP goes to the RLS Recovery skill (shared with repo and Off-Road

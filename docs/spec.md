@@ -18,8 +18,8 @@ worth the time.
 - A job board with several calls at once and everything needed to choose one.
 - The payout quoted before accepting; short and long jobs pay about the same per minute.
 - Towing, not driving: the job is to carry the car, not to drive it there.
-- Pay a little above RLS repo per minute (towing takes a truck and more time); expensive cars
-  close to Job Broker deliveries of the same class. XP a step below Off-Road Recovery.
+- Pay a little above RLS repo per minute on a typical tow (towing takes a truck and more time);
+  Exotic and Heavy close to Job Broker deliveries of the same class. XP a step below Off-Road Recovery.
 - Progress the existing RLS Recovery skill, not a new one.
 - Leave the original RLS repo jobs untouched.
 
@@ -141,7 +141,7 @@ quote = (callout + outboundRate × km to vehicle + loadedRate × km loaded)
 - Skill bonus: the RLS repo curve, `4 × floor(level / 2) / 24`, +400 % at level 48.
 - Tier multiplier for tow: the hub's own ladder, so every tier pays more than the one below
   (RLS gives Low Value and Budget the same): Low Value 1.3, Budget 1.5, Standard 1.7,
-  Luxury 2.0, Exotic 2.4, Heavy 2.85. The top tiers step up faster so expensive cars pay
+  Luxury 2.0, Exotic 2.4, Heavy 2.85. The top tiers step up faster so Exotic and Heavy pay
   close to Job Broker deliveries of the same class. Unlock levels still come from RLS.
 - Job type factor: Tow 1.1, Repo 1.0.
 - Economy multiplier: the RLS `repo` economy section.
