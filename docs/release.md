@@ -21,7 +21,7 @@ follow the same steps.
      app id (`towRepoHub`) and the save folder (`career/towRepoHub`) stay, so existing saves keep
      their jobs.
 5. Run the tests: `tools/test.sh` (or `luajit tests/run.lua tests/*_test.lua` in PowerShell).
-6. Render the phone screens: `tools/dev/preview.ps1` and check `list`, `active`, `delivery`,
+6. Render the phone screens: `tools/dev/preview.ps1` (or `tools/dev/preview.sh` on macOS) and check `list`, `active`, `delivery`,
    `complete`, `help` and `empty` in `.cache/preview/`: no debug panel, footer with the version.
 
 ## 2. Build and install it like a player

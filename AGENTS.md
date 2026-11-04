@@ -52,7 +52,8 @@ On the Windows gaming PC (PowerShell; scripts not yet verified on a real install
   Reload Lua in game with Ctrl+L; UI changes need Ctrl+F5 or a restart.
 - Deploy as players install it: `tools/dev/deploy.ps1 -Zip`.
 - Follow the log: `tools/dev/log.ps1` (filtered to hub messages, errors and warnings).
-- Preview the phone app without the game: `tools/dev/preview.ps1` renders the real
+- Preview the phone app without the game: `tools/dev/preview.ps1` (Windows, Edge) or
+  `tools/dev/preview.sh` (macOS/Linux, Chrome or Chromium) renders the real
   `PhoneTowRepoHub.vue` with sample data from `tools/dev/preview/states.js` to
   `.cache/preview/<state>.png` (headless Edge, Vue and Sass from CDNs). The default 350 × 626 px
   screen matches the RLS phone at 2560 × 1440. Use it for every layout change before deploying;
