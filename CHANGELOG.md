@@ -2,7 +2,7 @@
 
 What changed for players in each version of Tow Dispatch.
 
-## 1.0.0 — unreleased
+## 1.0.0 — 2026-11-04
 
 The first release: run a tow business in your RLS career.
 
