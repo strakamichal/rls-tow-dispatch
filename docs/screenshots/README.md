@@ -28,6 +28,19 @@ Alternatives:
 The rollback in the The Gap shots is RLS's "Fink Industries Rollback" spawned from the console as
 a temporary vehicle, so those jobs show no own rig bonus.
 
+## Photo mode (`photomode/`)
+
+All 56 shots the player took in game on 2026-11-04 (Ctrl+P / photo mode), as JPEG, 2560 px
+wide, quality 90, numbered in the order taken (`NN-HH-MM-SS.jpg`). The originals (317 MB PNG)
+stay local in `.cache/screenshots/game/`. `00-contact-sheet.jpg` shows them all with their numbers.
+
+- 02–10: West Coast, an overheating van on a car trailer behind a pickup (09–10 at night).
+- 11–55: The Gap, an orange D45 rollback with an overheating orange car: loading on the tilted
+  bed (11–15), towing along autumn roads (16–49) and at sunset with the beacons on (50–55).
+- Strong candidates for beamng.com: 27, 31, 32, 35, 42, 43, 52.
+- Skip: 01 (sky only), 09–10 (too dark), 56 (has the Interface Explorer bar; see
+  `beamng-board-gap.jpg` instead).
+
 ## Test evidence (`testing/`)
 
 Screens kept as evidence for [docs/test-1.0.0.md](../test-1.0.0.md):
