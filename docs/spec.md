@@ -160,6 +160,9 @@ and Logistics at the same level):
 - Exotic and Heavy tows pay about what a Job Broker delivery of the same class pays without the
   trip back to the player's own car (0.95–1.1× at 6 km), and more than one with it. Job Broker
   pays little for cheap cars, so Low Value to Luxury tows pay well above it, as RLS repo does.
+- Job Broker trailers hauled with the player's own vehicle pay the most at low levels (semi
+  trailers about 630–800/min at a 6 km haul from the start, as Logistics adds nothing below level 30). A
+  Heavy tow passes them at level 25 and is level with them at 48 (about 1 500/min).
 `luajit tools/balance.lua [loaded km]` prints the comparison; rerun it when RLS pay changes.
 
 ### Towing, not driving

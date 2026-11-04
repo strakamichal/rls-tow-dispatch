@@ -1,6 +1,7 @@
--- Compares tow pay per minute with RLS repo, Job Broker vehicle delivery and Off-Road Recovery.
--- RLS formulas are copied from RLS 2.8 (jobs/repo.lua calculateReward, lib/logistics/
--- logisticsBalance.lua, career/logistics/vehicleTasks/rewards.lua, jobs/recovery/rewards.lua);
+-- Compares tow pay per minute with RLS repo, Job Broker vehicle and trailer deliveries and
+-- Off-Road Recovery. RLS formulas are copied from RLS 2.8 (jobs/repo.lua calculateReward,
+-- lib/logistics/logisticsBalance.lua, career/logistics/vehicleTasks/rewards.lua,
+-- jobs/recovery/rewards.lua, gameplay/overhaul/delivery/rlsvehicles.deliveryVehicles.json);
 -- update them when RLS pay changes. Drive and load times are a model, not measurements.
 -- Run from the repo root: luajit tools/balance.lua [loaded km]
 
@@ -16,6 +17,7 @@ local LEVELS = { 10, 25, 48 }
 local CAR_KMH, TRUCK_KMH, TOWING_KMH = 60, 55, 45
 local LOAD_MIN, STOP_MIN, SPAWN_MIN, PARK_MIN = 3, 0.5, 0.5, 0.5
 local OFFROAD_KMH, OFFROAD_LOADED_KMH, EXTRACT_MIN = 40, 35, 8
+local COUPLE_MIN, UNCOUPLE_MIN = 1, 1
 
 -- RLS tier: unlock level, repo pay multiplier, a typical vehicle value, Job Broker 4-mile pay.
 local CLASSES = {
@@ -26,6 +28,21 @@ local CLASSES = {
   { key = "exoticVeh", label = "Exotic", level = 20, repo = 1.6, value = 300000, broker = 3250 },
   { key = "heavyVeh", label = "Heavy", level = 25, repo = 1.8, value = 150000, broker = 4000 },
 }
+
+-- Job Broker trailer groups: 4-mile pay, a typical loaded filter's baseReward and rewardPerKm,
+-- and the speed with the trailer. Hauled with the player's own vehicle, so there is no trip back.
+local TRAILERS = {
+  { label = "Small (TSFB, box)", pay = 750, base = 275, perKm = 250, kmh = 55 },
+  { label = "Medium (cargo, tilt)", pay = 1500, base = 1100, perKm = 315, kmh = 50 },
+  { label = "Heavy hitch", pay = 3000, base = 1500, perKm = 450, kmh = 50 },
+  { label = "Dry van", pay = 4000, base = 2300, perKm = 800, kmh = 45 },
+  { label = "Flatbed semi", pay = 4250, base = 2700, perKm = 1000, kmh = 45 },
+  { label = "Tanker", pay = 4700, base = 3300, perKm = 1200, kmh = 45 },
+  { label = "Container", pay = 4850, base = 3600, perKm = 1250, kmh = 45 },
+  { label = "Log trailer", pay = 5000, base = 4300, perKm = 1400, kmh = 45 },
+}
+local BROKER_REFERENCE_KM = 4 * 1.609344
+local BROKER_BASE_PAY_MULTIPLIER = 1.5
 
 local function minutes(km, kmh) return km / kmh * 60 end
 
@@ -49,13 +66,26 @@ local function repoJob(class, level)
 end
 
 -- Best case: no damage, no detour and on time; Logistics at the same level as Recovery.
-local function brokerJob(class, level, walkBack)
-  local base = class.broker * 1.5 * LOADED_KM / (4 * 1.609344)
+local function withBrokerBonuses(base, level)
   local levelBonus = math.max(0, math.min(20, level - 30)) * 0.05
-  local pay = (base * 1.05 + 2 * (base * 0.15 + 10)) * (1 + levelBonus)
+  return (base * 1.05 + 2 * (base * 0.15 + 10)) * (1 + levelBonus)
+end
+
+-- Vehicle filters have no baseReward, so their pay is linear in distance.
+local function brokerJob(class, level, walkBack)
+  local base = class.broker * BROKER_BASE_PAY_MULTIPLIER * LOADED_KM / BROKER_REFERENCE_KM
+  local pay = withBrokerBonuses(base, level)
   local time = minutes(OUTBOUND_KM, CAR_KMH) + SPAWN_MIN + minutes(LOADED_KM, CAR_KMH) + PARK_MIN
   if walkBack then time = time + minutes(LOADED_KM, CAR_KMH) end
   return pay, time
+end
+
+-- Trailer filters have a baseReward, so short deliveries keep much of the 4-mile pay.
+-- With a loaner from the depot the organisation takes about half; not modelled.
+local function trailerJob(trailer, level)
+  local share = (trailer.base + trailer.perKm * LOADED_KM) / (trailer.base + trailer.perKm * BROKER_REFERENCE_KM)
+  local pay = withBrokerBonuses(trailer.pay * BROKER_BASE_PAY_MULTIPLIER * share, level)
+  return pay, minutes(OUTBOUND_KM, TRUCK_KMH) + COUPLE_MIN + minutes(LOADED_KM, trailer.kmh) + UNCOUPLE_MIN
 end
 
 local function offroadJob(level)
@@ -84,4 +114,10 @@ for _, level in ipairs(LEVELS) do
         perMinute(tp, tt) / perMinute(rp, rt), perMinute(tp, tt) / perMinute(jp, jt)))
     end
   end
+  local trailerRows = {}
+  for _, trailer in ipairs(TRAILERS) do
+    local pay, time = trailerJob(trailer, level)
+    trailerRows[#trailerRows + 1] = string.format("%s %.0f (%.0f)", trailer.label, pay / time, pay)
+  end
+  print("Broker trailers, own vehicle: " .. table.concat(trailerRows, ", "))
 end
