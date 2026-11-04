@@ -31,15 +31,16 @@ local CLASSES = {
 
 -- Job Broker trailer groups: 4-mile pay, a typical loaded filter's baseReward and rewardPerKm,
 -- and the speed with the trailer. Hauled with the player's own vehicle, so there is no trip back.
+-- Logistics unlock levels from TRAILER_XP_LEVEL_BY_GROUP in lib/logistics/calculators.lua.
 local TRAILERS = {
-  { label = "Small (TSFB, box)", pay = 750, base = 275, perKm = 250, kmh = 55 },
-  { label = "Medium (cargo, tilt)", pay = 1500, base = 1100, perKm = 315, kmh = 50 },
-  { label = "Heavy hitch", pay = 3000, base = 1500, perKm = 450, kmh = 50 },
-  { label = "Dry van", pay = 4000, base = 2300, perKm = 800, kmh = 45 },
-  { label = "Flatbed semi", pay = 4250, base = 2700, perKm = 1000, kmh = 45 },
-  { label = "Tanker", pay = 4700, base = 3300, perKm = 1200, kmh = 45 },
-  { label = "Container", pay = 4850, base = 3600, perKm = 1250, kmh = 45 },
-  { label = "Log trailer", pay = 5000, base = 4300, perKm = 1400, kmh = 45 },
+  { label = "Small (TSFB, box)", level = 1, pay = 750, base = 275, perKm = 250, kmh = 55 },
+  { label = "Medium (cargo, tilt)", level = 4, pay = 1500, base = 1100, perKm = 315, kmh = 50 },
+  { label = "Heavy hitch", level = 6, pay = 3000, base = 1500, perKm = 450, kmh = 50 },
+  { label = "Dry van", level = 10, pay = 4000, base = 2300, perKm = 800, kmh = 45 },
+  { label = "Flatbed semi", level = 13, pay = 4250, base = 2700, perKm = 1000, kmh = 45 },
+  { label = "Tanker", level = 19, pay = 4700, base = 3300, perKm = 1200, kmh = 45 },
+  { label = "Container", level = 22, pay = 4850, base = 3600, perKm = 1250, kmh = 45 },
+  { label = "Log trailer", level = 25, pay = 5000, base = 4300, perKm = 1400, kmh = 45 },
 }
 local BROKER_REFERENCE_KM = 4 * 1.609344
 local BROKER_BASE_PAY_MULTIPLIER = 1.5
@@ -65,17 +66,21 @@ local function repoJob(class, level)
   return pay, minutes(OUTBOUND_KM, CAR_KMH) + SPAWN_MIN + minutes(LOADED_KM, CAR_KMH) + PARK_MIN
 end
 
--- Best case: no damage, no detour and on time; Logistics at the same level as Recovery.
-local function withBrokerBonuses(base, level)
+-- No damage and no detour; the on-time bonus only when the job beats RLS's expected time
+-- (offer distance at 12 m/s plus 30 s), timed from accepting it. Logistics at the same level
+-- as Recovery.
+local function withBrokerBonuses(base, level, jobMinutes)
   local levelBonus = math.max(0, math.min(20, level - 30)) * 0.05
-  return (base * 1.05 + 2 * (base * 0.15 + 10)) * (1 + levelBonus)
+  local bonusCount = 1
+  if jobMinutes * 60 < LOADED_KM * 1000 / 12 + 30 then bonusCount = 2 end
+  return (base * 1.05 + bonusCount * (base * 0.15 + 10)) * (1 + levelBonus)
 end
 
 -- Vehicle filters have no baseReward, so their pay is linear in distance.
 local function brokerJob(class, level, walkBack)
   local base = class.broker * BROKER_BASE_PAY_MULTIPLIER * LOADED_KM / BROKER_REFERENCE_KM
-  local pay = withBrokerBonuses(base, level)
   local time = minutes(OUTBOUND_KM, CAR_KMH) + SPAWN_MIN + minutes(LOADED_KM, CAR_KMH) + PARK_MIN
+  local pay = withBrokerBonuses(base, level, time)
   if walkBack then time = time + minutes(LOADED_KM, CAR_KMH) end
   return pay, time
 end
@@ -84,8 +89,8 @@ end
 -- With a loaner from the depot the organisation takes about half; not modelled.
 local function trailerJob(trailer, level)
   local share = (trailer.base + trailer.perKm * LOADED_KM) / (trailer.base + trailer.perKm * BROKER_REFERENCE_KM)
-  local pay = withBrokerBonuses(trailer.pay * BROKER_BASE_PAY_MULTIPLIER * share, level)
-  return pay, minutes(OUTBOUND_KM, TRUCK_KMH) + COUPLE_MIN + minutes(LOADED_KM, trailer.kmh) + UNCOUPLE_MIN
+  local time = minutes(OUTBOUND_KM, TRUCK_KMH) + COUPLE_MIN + minutes(LOADED_KM, trailer.kmh) + UNCOUPLE_MIN
+  return withBrokerBonuses(trailer.pay * BROKER_BASE_PAY_MULTIPLIER * share, level, time), time
 end
 
 local function offroadJob(level)
@@ -116,8 +121,10 @@ for _, level in ipairs(LEVELS) do
   end
   local trailerRows = {}
   for _, trailer in ipairs(TRAILERS) do
-    local pay, time = trailerJob(trailer, level)
-    trailerRows[#trailerRows + 1] = string.format("%s %.0f (%.0f)", trailer.label, pay / time, pay)
+    if trailer.level <= level then
+      local pay, time = trailerJob(trailer, level)
+      trailerRows[#trailerRows + 1] = string.format("%s %.0f (%.0f)", trailer.label, pay / time, pay)
+    end
   end
   print("Broker trailers, own vehicle: " .. table.concat(trailerRows, ", "))
 end
