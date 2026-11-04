@@ -37,9 +37,13 @@ local function towJob(class, level)
   return quote, minutes(OUTBOUND_KM, TRUCK_KMH) + LOAD_MIN + minutes(LOADED_KM, TOWING_KMH) + STOP_MIN
 end
 
+-- RLS repo counts the route to the car and the loaded route as distance, but the clock only
+-- from when the car first moves, so its "speed" term is total distance over loaded time.
 local function repoJob(class, level)
-  local metres, speed = LOADED_KM * 1000, CAR_KMH / 3.6
-  local foundation = math.floor(((5 * math.sqrt(class.value) + 2 * metres) * (speed / 10)) / 4) / 15
+  local metres = (OUTBOUND_KM + LOADED_KM) * 1000
+  local loadedSeconds = minutes(LOADED_KM, CAR_KMH) * 60
+  local speedTerm = metres / (loadedSeconds * 10)
+  local foundation = math.floor(((5 * math.sqrt(class.value) + 2 * metres) * speedTerm) / 4) / 15
   local pay = (foundation + 500) * class.repo * (1 + pricing.repoSkillBonus(level))
   return pay, minutes(OUTBOUND_KM, CAR_KMH) + SPAWN_MIN + minutes(LOADED_KM, CAR_KMH) + PARK_MIN
 end

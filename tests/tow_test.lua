@@ -87,6 +87,15 @@ return function(t)
       t.truthy(not tow.isElectric(car()), "gasoline")
     end },
 
+    { "tow pay ladder", function()
+      t.eq(tow.TIER_PAY.junkerVeh, 1.3, "Low Value")
+      t.eq(tow.TIER_PAY.smallVeh, 1.5, "Budget")
+      t.eq(tow.TIER_PAY.fleetVeh, 1.7, "Standard")
+      t.eq(tow.TIER_PAY.highEndVeh, 2.0, "Luxury")
+      t.eq(tow.TIER_PAY.exoticVeh, 2.4, "Exotic")
+      t.eq(tow.TIER_PAY.heavyVeh, 2.85, "Heavy")
+    end },
+
     { "every tow tier pays and teaches more than the one below", function()
       local order = { "junkerVeh", "smallVeh", "fleetVeh", "highEndVeh", "exoticVeh", "heavyVeh" }
       for i = 2, #order do
@@ -94,7 +103,7 @@ return function(t)
         t.truthy(tow.TIER_BASE_XP[order[i]] > tow.TIER_BASE_XP[order[i - 1]], "XP rises at " .. order[i])
       end
       local tier = tow.tierData("smallVeh", { payMultiplier = 1.0, baseXp = 250, tierLabel = "Budget Repo", skillUnlockLevel = 5 })
-      t.eq(tier.payMultiplier, 1.15, "tow pay")
+      t.eq(tier.payMultiplier, 1.5, "tow pay")
       t.eq(tier.baseXp, 350, "tow XP")
       t.eq(tier.tierLabel, "Budget Tow", "label")
       t.eq(tier.skillUnlockLevel, 5, "RLS unlock level kept")

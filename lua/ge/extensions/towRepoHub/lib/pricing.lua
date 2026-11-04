@@ -70,8 +70,8 @@ function M.repoSkillBonus(level)
   return 4 * steps / 24
 end
 
--- The hub's pay bonus is the RLS repo curve: tow shares the Recovery skill with repo and,
--- because it makes the player tow, should pay at least as well at every level.
+-- The hub's pay bonus is the RLS repo curve: tow shares the Recovery skill with repo, so the
+-- gap between the two stays the same at every level.
 M.skillBonus = M.repoSkillBonus
 
 -- args: outboundKm, loadedKm, level (Recovery skill, shared by RLS repo and recovery),
