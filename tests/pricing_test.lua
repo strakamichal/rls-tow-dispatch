@@ -65,10 +65,10 @@ return function(t)
       end
     end },
 
-    { "own rig bonus: 10 % for an own rig, 5 % for an own vehicle with a rented trailer", function()
-      t.eq(pricing.ownRigBonusShare(true, nil), 0.10, "own flatbed, wheel lift or rope")
-      t.eq(pricing.ownRigBonusShare(true, true), 0.10, "own vehicle and own trailer")
-      t.eq(pricing.ownRigBonusShare(true, false), 0.05, "own vehicle, rented trailer")
+    { "own rig bonus: 20 % for an own rig, 10 % for an own vehicle with a rented trailer", function()
+      t.eq(pricing.ownRigBonusShare(true, nil), 0.20, "own flatbed, wheel lift or rope")
+      t.eq(pricing.ownRigBonusShare(true, true), 0.20, "own vehicle and own trailer")
+      t.eq(pricing.ownRigBonusShare(true, false), 0.10, "own vehicle, rented trailer")
       t.eq(pricing.ownRigBonusShare(false, true), 0, "rented vehicle, own trailer")
       t.eq(pricing.ownRigBonusShare(false, false), 0, "rented vehicle and trailer")
       t.eq(pricing.ownRigBonusShare(false, nil), 0, "rented flatbed")
@@ -76,13 +76,29 @@ return function(t)
     end },
 
     { "own rig bonus is the share of the quote", function()
+      t.eq(pricing.ownRigBonus(4115, 0.20), 823, "20 %")
       t.eq(pricing.ownRigBonus(4115, 0.10), 412, "10 %")
-      t.eq(pricing.ownRigBonus(4115, 0.05), 206, "5 %")
       t.eq(pricing.ownRigBonus(4115, 0), 0, "none")
-      t.eq(pricing.ownRigBonus(NAN, 0.10), 0, "NaN quote")
-      t.eq(pricing.ownRigBonus(4115, 0.10, 0.5), 206, "half the route driven: half the bonus")
-      t.eq(pricing.ownRigBonus(4115, 0.10, 0), 0, "all driven: no bonus")
-      t.eq(pricing.ownRigBonus(4115, 0.10, NAN), 412, "unknown towed share counts as towed")
+      t.eq(pricing.ownRigBonus(NAN, 0.20), 0, "NaN quote")
+      t.eq(pricing.ownRigBonus(4115, 0.20, 0.5), 412, "half the route driven: half the bonus")
+      t.eq(pricing.ownRigBonus(4115, 0.20, 0), 0, "all driven: no bonus")
+      t.eq(pricing.ownRigBonus(4115, 0.20, NAN), 823, "unknown towed share counts as towed")
+    end },
+
+    { "the lowest rig share seen while towing applies", function()
+      t.eq(pricing.lowerRigShare(nil, 0.20), 0.20, "first rig seen")
+      t.eq(pricing.lowerRigShare(0.20, 0.10), 0.10, "a rented trailer later lowers it")
+      t.eq(pricing.lowerRigShare(0, 0.20), 0, "rented first, own truck at the end: stays none")
+      t.eq(pricing.lowerRigShare(0.20, nil), 0.20, "no rig in this check: unchanged")
+      t.eq(pricing.lowerRigShare(0.20, NAN), 0.20, "NaN ignored")
+    end },
+
+    { "the bonus share at delivery", function()
+      t.eq(pricing.rigShareAtDelivery(0.20, nil), 0.20, "unloaded and driven the last metres: kept")
+      t.eq(pricing.rigShareAtDelivery(0.20, 0.20), 0.20, "delivered on the own rig")
+      t.eq(pricing.rigShareAtDelivery(0, 0.20), 0, "towed with a rented rig, own truck at delivery")
+      t.eq(pricing.rigShareAtDelivery(nil, 0.20), 0.20, "towed only at the end: the delivery rig counts")
+      t.eq(pricing.rigShareAtDelivery(nil, nil), 0, "driven all the way: none")
     end },
 
     { "invalid numbers do not leak into money", function()

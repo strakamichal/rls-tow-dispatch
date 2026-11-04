@@ -45,7 +45,7 @@ take them.
 - **Care counts:** damage you cause on the way is taken from the payout, at most half of it.
   Cancelling is free until you move the car; after that it costs a fine.
 - **Own rig bonus:** no tow truck yet? Rent a pickup and a car trailer at the Job Broker depot.
-  Once you own your rig, every tow pays 10 % more (5 % with your own truck and a rented
+  Once you own your rig, every tow pays 20 % more (10 % with your own truck and a rented
   trailer).
 - **Part of your RLS career:** XP goes to the RLS Recovery skill (shared with repo and Off-Road
   Recovery), payouts appear in Wallet as recovery income, finished jobs go to the logbook, and

@@ -21,7 +21,20 @@ function M.needsBaseline(job, playerToTargetM)
     and playerToTargetM <= M.config.baselineRadiusM
 end
 
--- Custody starts once the vehicle has left its spot.
+-- The player is on site from the first time they get within baselineRadiusM of the vehicle: the
+-- phone asks them to load it and navigation stops. Nothing is charged for being on site.
+function M.arrivesOnSite(job, playerToTargetM)
+  return not job.onSite and not job.custody and tonumber(playerToTargetM) ~= nil
+    and playerToTargetM <= M.config.baselineRadiusM
+end
+
+-- Where custody is measured from: where the vehicle spawned, else (jobs saved before 1.0) the
+-- offer's spot.
+function M.custodyOrigin(job)
+  return job.spawnPos or job.pickupPos
+end
+
+-- Custody starts once the vehicle has moved more than custodyMoveM from where it spawned.
 function M.reachesCustody(job, movedFromSpotM)
   return not job.custody and tonumber(movedFromSpotM) ~= nil and movedFromSpotM > M.config.custodyMoveM
 end

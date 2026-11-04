@@ -11,6 +11,19 @@ return function(t)
       t.truthy(not job.needsBaseline({}, nil), "no position")
     end },
 
+    { "the player is on site once, within 30 m, before custody", function()
+      t.truthy(not job.arrivesOnSite({}, 31), "too far")
+      t.truthy(job.arrivesOnSite({}, 30), "at 30 m")
+      t.truthy(not job.arrivesOnSite({ onSite = true }, 5), "already on site")
+      t.truthy(not job.arrivesOnSite({ custody = true }, 5), "already in custody")
+      t.truthy(not job.arrivesOnSite({}, nil), "no position")
+    end },
+
+    { "custody is measured from where the vehicle spawned", function()
+      t.eq(job.custodyOrigin({ spawnPos = { 1, 2, 3 }, pickupPos = { 9, 9, 9 } })[1], 1, "spawn position")
+      t.eq(job.custodyOrigin({ pickupPos = { 9, 9, 9 } })[1], 9, "older jobs: the offer's spot")
+    end },
+
     { "custody starts after the vehicle moves more than 10 m", function()
       t.truthy(not job.reachesCustody({}, 10), "10 m")
       t.truthy(job.reachesCustody({}, 10.5), "10.5 m")

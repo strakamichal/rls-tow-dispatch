@@ -10,6 +10,7 @@ local jobRules = require("towRepoHub/lib/job")
 local tow = require("towRepoHub/lib/tow")
 local repoTiers = require("towRepoHub/lib/repoTiers")
 local persist = require("towRepoHub/lib/persist")
+local spotRules = require("towRepoHub/lib/spots")
 
 local M = {}
 
@@ -151,12 +152,25 @@ local function cityParkingSpots()
   if not (found and parkingSpots) and overhaul_integration_services_parking then
     parkingSpots = overhaul_integration_services_parking.getParkingSpots()
   end
-  for _, spot in pairs(parkingSpots and parkingSpots.objects or {}) do
+  -- The sorted list gives the same order on every load; objects (keyed by id) is the fallback.
+  local list = parkingSpots and parkingSpots.sorted
+  local iterate = list and ipairs or pairs
+  for _, spot in iterate(list or (parkingSpots and parkingSpots.objects) or {}) do
     if spot.pos and not spot.missing then spots[#spots + 1] = spot end
   end
+  local dropped
+  spots, dropped = spotRules.uniqueByKey(spots, spotKey)
   cache.citySpots = spots
-  log("I", LOG_TAG, string.format("%d parking spots on %s", #spots, tostring(cache.levelId)))
+  cache.spotGroups = spotRules.groupByEntry(spots)
+  log("I", LOG_TAG, string.format("%d parking spots in %d entries on %s (%d with a shared name skipped)",
+    #spots, #cache.spotGroups, tostring(cache.levelId), dropped))
   return spots
+end
+
+-- The current map's spots grouped by sites entry (lib/spots).
+local function cityParkingGroups()
+  cityParkingSpots()
+  return currentMapCache().spotGroups or {}
 end
 
 local function dealerships()
@@ -299,21 +313,23 @@ local DEBUG_MODELS = {
   { key = "van", label = "H-Series" },
 }
 
+-- Draws a sites entry first and then a stall in it (lib/spots), so big lots drawn as many stalls
+-- do not get most of the pickups.
 local function pickPickupSpot(state, fromPos, destPos)
-  local spots = cityParkingSpots()
+  local groups = cityParkingGroups()
   local minFromPlayer = debugShortJobs and DEBUG_MIN_PICKUP_FROM_PLAYER_M or MIN_PICKUP_FROM_PLAYER_M
   local minLoaded = debugShortJobs and DEBUG_MIN_LOADED_ROUTE_M or MIN_LOADED_ROUTE_M
   if debugShortJobs then
     local near = {}
-    for _, spot in ipairs(spots) do
+    for _, spot in ipairs(cityParkingSpots()) do
       if spot.pos:distance(fromPos) <= DEBUG_MAX_PICKUP_M then near[#near + 1] = spot end
     end
-    spots = near
+    groups = spotRules.groupByEntry(near)
   end
   local routeTries = 0
   for _ = 1, MAX_SPOT_TRIES do
-    if #spots == 0 then return nil end
-    local spot = spots[math.random(#spots)]
+    if #groups == 0 then return nil end
+    local spot = spotRules.pick(groups, math.random)
     local key = spotKey(spot)
     if not board.isSpotTaken(state, key) and spot.pos:distance(fromPos) >= minFromPlayer then
       routeTries = routeTries + 1
@@ -721,8 +737,8 @@ local function isTrailer(vehicle)
 end
 
 -- Who owns the rig at delivery: the vehicle the target rests on (a trailer and what pulls it, or a
--- flatbed), else the vehicle the player sits in (wheel lift, rope). Returns rigOwned and
--- trailerOwned (nil without a trailer).
+-- flatbed), else the vehicle the player sits in (wheel lift, rope; not on foot). Returns rigOwned,
+-- trailerOwned (nil without a trailer) and whether a rig was found at all.
 local function rigOwnership(job)
   local rigId, trailerId
   local carrier = findCarrier(job)
@@ -736,11 +752,21 @@ local function rigOwnership(job)
   end
   if not rigId then
     local playerId = be:getPlayerVehicleID(0)
-    if playerId and playerId >= 0 and playerId ~= job.vehicleId then rigId = playerId end
+    local walking = gameplay_walk and gameplay_walk.isWalking and gameplay_walk.isWalking()
+    if playerId and playerId >= 0 and playerId ~= job.vehicleId and not walking then rigId = playerId end
   end
   local trailerOwned
   if trailerId then trailerOwned = isOwnVehicle(trailerId) end
-  return isOwnVehicle(rigId), trailerOwned
+  return isOwnVehicle(rigId), trailerOwned, rigId ~= nil
+end
+
+-- The own rig bonus share of the rig seen now, or nil when no rig is found (the player drives the
+-- target or is on foot). A failed check counts as no rig.
+local function currentRigShare(job)
+  local ok, rigOwned, trailerOwned, found = pcall(rigOwnership, job)
+  if not ok then log("W", LOG_TAG, "rig check failed: " .. tostring(rigOwned)); return nil end
+  if not found then return nil end
+  return pricing.ownRigBonusShare(rigOwned, trailerOwned)
 end
 
 local function completeJob(job, finalConditions)
@@ -749,9 +775,9 @@ local function completeJob(job, finalConditions)
   local notTowed, xpFactor = pricing.selfDrive(job.quote, job.drivenM, job.loadedM)
   -- A failed rig check only costs the bonus, never the payout. The bonus shrinks like the XP when
   -- part of the route was driven instead of towed.
-  local okRig, rigOwned, trailerOwned = pcall(rigOwnership, job)
-  if not okRig then log("W", LOG_TAG, "rig check failed: " .. tostring(rigOwned)); rigOwned, trailerOwned = false, nil end
-  local ownRigShare = pricing.ownRigBonusShare(rigOwned, trailerOwned)
+  -- The rig is watched while towing (trackSelfDrive); the one at delivery counts too, so the
+  -- lowest share seen applies. Unloading before the spot and driving the last metres keeps it.
+  local ownRigShare = pricing.rigShareAtDelivery(job.rigShare, currentRigShare(job))
   local ownRig = pricing.ownRigBonus(job.quote, ownRigShare, xpFactor)
   paid = math.max(0, paid - notTowed) + ownRig
   local xp = scaledXp(pricing.xp({ tierBaseXp = job.tierBaseXp, loadedKm = job.loadedM / 1000, jobType = job.jobType }))
@@ -775,7 +801,8 @@ local function completeJob(job, finalConditions)
     vehicle = { brand = job.brand, name = job.name, year = job.year },
     destinationName = job.destinationName,
     quote = job.quote, penalty = penalty, notTowed = notTowed, drivenM = job.drivenM or 0, paid = paid, xp = xp,
-    ownRig = ownRig, ownRigShare = ownRigShare * xpFactor, rentedTrailer = trailerOwned == false,
+    ownRig = ownRig, ownRigShare = ownRigShare * xpFactor,
+    rentedTrailer = ownRigShare > 0 and ownRigShare < pricing.config.ownRigBonus,
     skill = skillProgress(),
   }
   -- Level up, and the tow tiers that unlocked with it, for the completion screen.
@@ -844,10 +871,23 @@ end
 -- the allowance they cut the pay (lib/pricing selfDrive). Riding on a bed or a rope does not count:
 -- the player sits in the tow vehicle then. The player is told when they first get in and when the
 -- allowance runs out.
+-- While the target is towed (in custody, moving, the player not in it), the rig is checked every
+-- RIG_CHECK_EVERY steps and the lowest own rig bonus share seen is kept (lib/pricing lowerRigShare).
+local RIG_CHECK_EVERY = 4
+
 local function trackSelfDrive(job, targetPos)
   local inTarget = be:getPlayerVehicleID(0) == job.vehicleId
-  if inTarget and job.lastTargetPos then
-    job.drivenM = (job.drivenM or 0) + jobRules.drivenStep(targetPos:distance(arrayToVec(job.lastTargetPos)))
+  local step = job.lastTargetPos and jobRules.drivenStep(targetPos:distance(arrayToVec(job.lastTargetPos))) or 0
+  if inTarget then
+    job.drivenM = (job.drivenM or 0) + step
+  elseif job.custody and step > 0 then
+    job.towSteps = (job.towSteps or 0) + 1
+    if job.towSteps % RIG_CHECK_EVERY == 1 then
+      local share = currentRigShare(job)
+      local before = job.rigShare
+      job.rigShare = pricing.lowerRigShare(job.rigShare, share)
+      if job.rigShare ~= before then log("I", LOG_TAG, string.format("rig bonus share while towing: %.2f", job.rigShare)) end
+    end
   end
   job.lastTargetPos = vecToArray(targetPos)
   if not inTarget then return end
@@ -899,7 +939,13 @@ local function updateJob()
     end)
   end
 
-  if jobRules.reachesCustody(job, targetPos:distance(arrayToVec(job.pickupPos))) then
+  if playerPos and jobRules.arrivesOnSite(job, playerPos:distance(targetPos)) then
+    job.onSite = true
+    if routeLease then routeLease.clear() end
+    log("I", LOG_TAG, string.format("on site at %.0f m", playerPos:distance(targetPos)))
+  end
+
+  if jobRules.reachesCustody(job, targetPos:distance(arrayToVec(jobRules.custodyOrigin(job)))) then
     job.custody = true
     local service = reservationService()
     if service and job.pickupLive then pcall(service.releaseSpot, job.pickupLive, job.token) end
@@ -1029,12 +1075,16 @@ local function offerLocked(offer, level)
   return not tierUnlocked({ skillUnlockLevel = offer.unlockLevel, skillUnlockFlag = offer.unlockFlag }, level)
 end
 
--- Offers loaded from a save have no RLS spot objects; finds them again by spot key and
--- destination id. Leaves offer.runtime nil when the spot or destination is gone.
+-- Offers loaded from a save have no RLS spot objects; finds them again by spot key and stored
+-- position, and the destination by id. Leaves offer.runtime nil when the spot or destination is gone.
 resolveOfferRuntime = function(offer)
   local spot
   for _, candidate in ipairs(cityParkingSpots()) do
-    if spotKey(candidate) == offer.spotKey then spot = candidate break end
+    if spotKey(candidate) == offer.spotKey
+      and (not offer.pickupPos or spotRules.samePlace(candidate.pos, offer.pickupPos)) then
+      spot = candidate
+      break
+    end
   end
   local facility
   for _, dealership in ipairs(dealerships()) do
@@ -1074,6 +1124,15 @@ local function acceptOffer(id)
     removeOffer(offer.id)
     return { ok = false, reason = "The vehicle's parking spot is taken. The offer was removed." }
   end
+  -- RLS finds spots by key; a spot elsewhere means the key named another spot, and the vehicle
+  -- would spawn away from the offer (and count as moved at once).
+  if pickupLive and not spotRules.samePlace(pickupLive.pos, offer.pickupPos) then
+    pcall(service.releaseSpot, pickupLive, token)
+    removeOffer(offer.id)
+    log("W", LOG_TAG, string.format("offer %d: RLS reserved %s away from the offer's spot; offer removed",
+      offer.id, tostring(pickupLive.name)))
+    return { ok = false, reason = "The vehicle's parking spot could not be reserved. The offer was removed." }
+  end
   local dropSpot, dropLive = reserveSpot(token, offer.runtime.dropSpot, offer.runtime.dropSpots)
 
   local vehicle = spawnTarget(offer, pickupLive or offer.runtime.spot)
@@ -1101,6 +1160,8 @@ local function acceptOffer(id)
   job.pickupLive = pickupLive
   job.dropLive = dropLive
   job.dropPos = vecToArray(dropSpot.pos)
+  -- Custody is measured from where the vehicle really stands, not from the offer's spot.
+  job.spawnPos = vecToArray(vehicle:getPosition())
   job.custody = false
   activeJob = job
   lastCompletion = nil
@@ -1154,10 +1215,29 @@ local function mapLabel(mapId)
   return title or tostring(mapId)
 end
 
+-- Road distance to the active job's next stop, as navigation shows it. Routed again only when
+-- the start moved LIVE_DISTANCE_MOVE_M or the stop changed; close by, the straight line.
+local NEAR_STRAIGHT_M = 150
+local nextStopRoute = {}
+
+local function roadDistanceToNext(from, to)
+  local straight = from:distance(to)
+  if straight <= NEAR_STRAIGHT_M then return straight end
+  local cached = nextStopRoute
+  if cached.to and cached.to:distance(to) < 1 and cached.from:distance(from) < LIVE_DISTANCE_MOVE_M then
+    return cached.distance
+  end
+  local distance = math.max(straight, routeDistance(from, to))
+  nextStopRoute = { from = vec3(from), to = vec3(to), distance = distance }
+  return distance
+end
+
 local function activeJobView(job)
   local otherMap = job.mapId ~= levelId()
   local vehicle = job.vehicleId and getObjectByID(job.vehicleId)
-  local nextStop = arrayToVec(job.custody and job.dropPos or job.pickupPos)
+  -- Before custody the next stop is the vehicle itself, wherever it stands now.
+  local nextStop = job.custody and arrayToVec(job.dropPos)
+    or (vehicle and vehicle:getPosition()) or arrayToVec(job.pickupPos)
   local from = not otherMap and (job.custody and vehicle and vehicle:getPosition() or playerPosition())
   return {
     jobType = job.jobType,
@@ -1175,8 +1255,9 @@ local function activeJobView(job)
     driveAllowanceM = pricing.config.selfDriveAllowanceM,
     notTowedSoFar = (pricing.selfDrive(job.quote, job.drivenM, job.loadedM)),
     custody = job.custody,
-    phase = job.completing and "completing" or (job.custody and "delivery" or "pickup"),
-    distanceToNextM = from and from:distance(nextStop) or nil,
+    phase = job.completing and "completing" or (job.custody and "delivery" or (job.onSite and "onSite" or "pickup")),
+    onSite = job.onSite == true,
+    distanceToNextM = from and roadDistanceToNext(from, nextStop) or nil,
     cancelFine = jobRules.endsWithFine(job) and pricing.custodyFine(job.quote) or 0,
     otherMap = otherMap,
     mapLabel = otherMap and mapLabel(job.mapId) or nil,
@@ -1348,7 +1429,7 @@ local function tryRestoreTarget(dt)
   if job.custody then
     setRoute(arrayToVec(job.dropPos))
     showDeliveryMarker(arrayToVec(job.dropPos))
-  else
+  elseif not job.onSite then
     setRoute(arrayToVec(job.pickupPos))
   end
   ui_message(string.format("Tow job resumed: %s.", vehicleLabel(job)), 6, LOG_TAG, "info")

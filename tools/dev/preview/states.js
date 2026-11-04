@@ -60,7 +60,7 @@
     jobType: 'tow', tierLabel: 'Budget Tow', vehicle: { year: 2021, brand: 'Cherrier', name: 'FCV Tograc 150dQ (DCT)' },
     destinationName: 'Sparrows Rest', destinationKind: 'home', fault: 'overheat', faultLabel: 'Overheating',
     weightKg: 1700, loadedM: 599, quote: 1718, xp: 404, custody: false, phase: 'pickup', distanceToNextM: 434,
-    cancelFine: 0, otherMap: false, drivenM: 0, driveAllowanceM: 200, notTowedSoFar: 0,
+    onSite: false, cancelFine: 0, otherMap: false, drivenM: 0, driveAllowanceM: 200, notTowedSoFar: 0,
   }
 
   window.PREVIEW_STATES = {
@@ -68,6 +68,11 @@
     list: Object.assign({}, base, { offers: openOffers.concat(lockedOffers), filling: false }),
     // An accepted job before pickup; the offers are folded away.
     active: Object.assign({}, base, { offers: openOffers, activeJob }),
+    // At the vehicle, not loaded yet: the first step asks to load it and shows no distance.
+    onsite: Object.assign({}, base, {
+      offers: openOffers,
+      activeJob: Object.assign({}, activeJob, { onSite: true, phase: 'onSite', distanceToNextM: 12 }),
+    }),
     // After pickup: the second step is current and cancelling costs a fine.
     delivery: Object.assign({}, base, {
       offers: openOffers,
@@ -105,8 +110,8 @@
       offers: openOffers,
       lastCompletion: {
         vehicle: { year: 2016, brand: 'Ibishu', name: 'Pessima 1.8 DX (M)' }, destinationName: 'Sparrows Rest',
-        quote: 4115, penalty: 0, notTowed: 0, drivenM: 40, ownRig: 206, ownRigShare: 0.05, rentedTrailer: true,
-        paid: 4321, xp: 612, skill: { level: 10, fraction: 0.4, toNext: 1800 },
+        quote: 4115, penalty: 0, notTowed: 0, drivenM: 40, ownRig: 412, ownRigShare: 0.10, rentedTrailer: true,
+        paid: 4527, xp: 612, skill: { level: 10, fraction: 0.4, toNext: 1800 },
       },
     }),
     // A clean delivery that also levels up and unlocks a tier.

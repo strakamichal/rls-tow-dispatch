@@ -23,8 +23,10 @@ M.config = {
   -- Own rig bonus on top of the quote: the player's own tow vehicle (and trailer, if any), or the
   -- player's own vehicle pulling a trailer rented at the Job Broker depot. A rented tow vehicle
   -- gets none; RLS already charges hourly rent for it.
-  ownRigBonus = 0.10,
-  ownVehicleRentedTrailerBonus = 0.05,
+  -- Doubled from 10 / 5 % (decision 2026-11-04): towing is more work than hauling a trailer, and
+  -- an own rig is costly and at risk; the tier ladder stays, so an own rig earns a bit more.
+  ownRigBonus = 0.20,
+  ownVehicleRentedTrailerBonus = 0.10,
 }
 
 local MAX_SKILL_LEVEL = 50
@@ -135,6 +137,21 @@ function M.ownRigBonusShare(rigOwned, trailerOwned)
   if not rigOwned then return 0 end
   if trailerOwned == false then return M.config.ownVehicleRentedTrailerBonus end
   return M.config.ownRigBonus
+end
+
+-- The rig is checked while the target is towed; the lowest share seen is kept, so switching to an
+-- own truck for the last metres does not raise it. share nil (no rig seen) leaves it as it was.
+function M.lowerRigShare(current, share)
+  share = tonumber(share)
+  if share == nil or share ~= share then return current end
+  if current == nil then return share end
+  return math.min(current, share)
+end
+
+-- The share paid at delivery: the lowest seen while towing and at delivery. No rig ever seen (the
+-- target was driven all the way) pays none.
+function M.rigShareAtDelivery(towingShare, deliveryShare)
+  return M.lowerRigShare(towingShare, deliveryShare) or 0
 end
 
 -- towedShare (0..1, default 1) is the part of the route really towed, so a driven route earns

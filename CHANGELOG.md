@@ -22,7 +22,9 @@ The first release: run a tow business in your RLS career.
   long the tow is and where it goes, before you accept it.
 - Sort calls by payout or distance and filter them by tier and distance.
 - Calls above your Recovery level are shown as locked, with the level that unlocks them.
-- **Navigate** sets the route to the car and then to the destination.
+- **Navigate** sets the route to the car and then to the destination. The active job shows the
+  distance by road, as navigation does, and switches to "Load the vehicle" once you are there.
+- Broken-down cars stand at kerbside spots as often as in big parking lots.
 - A short guide behind the **?** button.
 
 ### Pay and progression
@@ -37,7 +39,8 @@ The first release: run a tow business in your RLS career.
 - Damage you cause on the way comes off the payout, at most half of it.
 - Cancelling is free until you move the car; after that it costs a fine.
 - Start with a pickup and a car trailer rented at the Job Broker depot; once the rig is your
-  own, every tow pays 10 % more (5 % with your own truck and a rented trailer).
+  own, every tow pays 20 % more (10 % with your own truck and a rented trailer). Unloading the
+  car just short of the spot and driving the last metres keeps the bonus.
 
 ### Part of your career
 - Payouts show up in Wallet as recovery income, and finished jobs in the logbook.

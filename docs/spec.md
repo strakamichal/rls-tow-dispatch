@@ -74,10 +74,24 @@ name, quoted payout and time to expiry. Offers can be sorted by payout
 and distance to the vehicle, and filtered by job type, tier and maximum distance to
 the vehicle. A **Route** button sets navigation to the active job's next stop.
 
+The active job shows the road distance to its next stop, the same as navigation (routed again
+after the start moves 50 m; within 150 m, the straight line). Once the player is within ~30 m
+of the vehicle they are **on site**: the first step reads "Load the vehicle", shows no distance
+and navigation stops. Being on site costs nothing; custody (below) still starts only when the
+vehicle moves.
+
 ### Pickup spots
 
 - All parking spots from the map's `city` sites file, like RLS repo. Awkward spots are
   part of the fun; no loadability filter. On The Gap, roadside spots are parking spots.
+- A spot is drawn per sites entry: first one entry of the file (a single spot or a row of
+  stalls), then a stall in it. Drawing stalls directly sent half the pickups on West Coast to
+  rows of 12+ stalls and one in ten to a kerbside spot; per entry it is about half kerbside.
+- Spots whose key (`file#name`) is shared with another spot are skipped: RLS reserves by key
+  and resolves a shared key to the first spot, so the vehicle would spawn elsewhere. On West
+  Coast stall 8 of the row "Parking 1828" and a single spot are both "Parking 1828.8".
+- Offers store the spot's position. On accept the reserved spot must lie within 3 m of it, else
+  the offer is removed; a reloaded offer finds its spot by key and position.
 - At least 300 m (straight line) from the player when spawned.
 - The last ~10 used spots are not offered again.
 - Spots are reserved through the RLS parking reservation service, so RLS jobs and the
@@ -141,8 +155,8 @@ quote = (callout + outboundRate × km to vehicle + loadedRate × km loaded)
 - Skill bonus: the RLS repo curve, `4 × floor(level / 2) / 24`, +400 % at level 48.
 - Tier multiplier for tow: the hub's own ladder, so every tier pays more than the one below
   (RLS gives Low Value and Budget the same): Low Value 1.18, Budget 1.364, Standard 1.545,
-  Luxury 1.82, Exotic 2.18, Heavy 2.59, so that with the *Own rig bonus* (+10 %) they come to
-  1.3, 1.5, 1.7, 2.0, 2.4 and 2.85. The top tiers step up faster so Exotic and Heavy pay
+  Luxury 1.82, Exotic 2.18, Heavy 2.59; with the *Own rig bonus* (+20 %) they come to
+  1.42, 1.64, 1.85, 2.18, 2.62 and 3.11. The top tiers step up faster so Exotic and Heavy pay
   close to Job Broker deliveries of the same class. Unlock levels still come from RLS.
 - Job type factor: Tow 1.1, Repo 1.0.
 - Economy multiplier: the RLS `repo` economy section.
@@ -155,19 +169,21 @@ quote = (callout + outboundRate × km to vehicle + loadedRate × km loaded)
 Balance reference (2026-11-04, RLS 2.8, 2 km to the car, modelled drive and load times, Recovery
 and Logistics at the same level, tow with an own rig):
 
-- A 6 km tow pays about 1.1–1.3× RLS repo of the same tier per minute. Repo pays for the drive
+- A 6 km tow pays about 1.2–1.4× RLS repo of the same tier per minute. Repo pays for the drive
   to the car too and less per minute the longer the delivery, tow pays the same per minute at
-  any length; so a 3 km tow pays about 0.8–0.95× repo and a 12 km tow about 1.5–1.75×.
-- Exotic and Heavy tows pay about 1.1–1.25× a Job Broker delivery of the same class without the
-  trip back to the player's own car at 6 km, and 0.8–0.95× at 12 km. A 6 km delivery just misses
+  any length; so a 3 km tow pays about 0.9–1.0× repo and a 12 km tow about 1.6–1.9×.
+- Exotic and Heavy tows pay about 1.15–1.35× a Job Broker delivery of the same class without the
+  trip back to the player's own car at 6 km, and 0.85–1.05× at 12 km. A 6 km delivery just misses
   RLS's on-time bonus (offer distance at 12 m/s plus 30 s, timed from accepting); if the timer
-  only starts at the pickup it gets it and the gap shrinks to about 1.0–1.1×. Job Broker pays
+  only starts at the pickup it gets it and the gap shrinks. Job Broker pays
   little for cheap cars, so Low Value to Luxury tows pay well above it, as RLS repo does.
+  (With the 10 % bonus before 2026-11-04 these were 1.1–1.3×, 0.8–0.95×, 1.5–1.75× and
+  1.1–1.25×.)
 - Job Broker trailers hauled with the player's own vehicle unlock by Logistics level (Small 1,
   Medium 4, Heavy hitch 6, Dry van 10, Flatbed 13, Tanker 19, Container 22, Log 25). At level 10
   a dry van pays about 565/min on a 6 km haul, twice a Standard tow; semi trailers pay about
-  600–700/min until Logistics adds its bonus from level 30. A Heavy tow passes them at level 25
-  (about 900/min) and stays about 15 % above the best trailer at level 48 (1 500 against 1 340).
+  600–700/min until Logistics adds its bonus from level 30. A Heavy tow passes them by level 25
+  (about 990/min) and stays about 23 % above the best trailer at level 48 (1 650 against 1 340).
   That is intended (decision 2026-11-04): a heavy tow is harder work than hauling a trailer.
 
 `luajit tools/balance.lua [loaded km]` prints the comparison; rerun it when RLS pay changes.
@@ -200,18 +216,26 @@ A tow done with the player's own equipment pays a bonus on top of the quote, so 
 truck is worth it. Renting at the RLS Job Broker depot stays as RLS has it: hourly rent and no
 share of the pay (RLS: "Hourly rent replaces the organization's share of delivery revenue").
 
-- Own tow vehicle, and own trailer if one is used: **+10 %** of the quote.
-- Own vehicle pulling a trailer rented at the depot: **+5 %**.
+- Own tow vehicle, and own trailer if one is used: **+20 %** of the quote.
+- Own vehicle pulling a trailer rented at the depot: **+10 %**.
 - Rented tow vehicle or flatbed: no bonus.
-- The rig is read at delivery: the vehicle the target rests on (a trailer and the vehicle pulling
-  it, or a flatbed); with a wheel lift or a rope, the vehicle the player sits in. Own is the test
-  RLS employment uses: in the garage, not marked unowned, no loan type and no owning organization
-  (so not a depot rental, company, Job Broker delivery or Off-Road Recovery vehicle).
+- Doubled from 10 / 5 % (decision 2026-11-04): towing is more work than hauling a trailer, and an
+  own rig is costly and at risk on the road. The tier ladder stayed, so an own rig earns about
+  9 % more than before and a rented rig the same.
+- The rig is the vehicle the target rests on (a trailer and the vehicle pulling it, or a
+  flatbed); with a wheel lift or a rope, the vehicle the player sits in (not on foot). It is
+  checked about every 2 s while the target is towed (in custody, moving, the player not in it)
+  and once more at delivery; the **lowest** share seen is paid. So unloading short of the spot and
+  driving the last metres keeps the bonus, while switching from a rented rig to an own truck at
+  the end does not raise it. A target never towed gets none.
+- Own is the test RLS employment uses: in the garage, not marked unowned, no loan type and no
+  owning organization (so not a depot rental, company, Job Broker delivery or Off-Road Recovery
+  vehicle).
 - Part of the route driven instead of towed shrinks the bonus like the XP (*Towing, not driving*).
 - The completion breakdown shows an "Own rig bonus" or "Own truck bonus" line. The quote on the
   board does not include the bonus.
-- The tier ladder is set so that a tow with an own rig pays what the balance reference below
-  describes; a rented rig earns about 9 % less.
+- With an own rig a tow pays what the balance reference below describes; a rented rig earns
+  about 17 % less.
 
 ### XP
 
@@ -240,7 +264,8 @@ RLS logbook.
 
 ### Cancellation and failure
 
-- **Custody** starts when the vehicle has moved more than ~10 m from its spot.
+- **Custody** starts when the vehicle has moved more than ~10 m from where it spawned (jobs
+  saved before 1.0: from the offer's spot).
 - Cancelling before custody is free. The offer leaves the board and is replaced.
 - Cancelling after custody, or losing or destroying the vehicle after custody, costs a
   fine of **50 % of the quote, at least $200**, and gives no XP. The quote already carries

@@ -74,8 +74,8 @@
           <ol class="steps">
             <li :class="{ done: job.custody, current: !job.custody }">
               <svg viewBox="0 0 24 24"><path :d="icons.pin" /></svg>
-              <span>Pick up the vehicle</span>
-              <b v-if="!job.custody && job.distanceToNextM != null">{{ distance(job.distanceToNextM) }}</b>
+              <span>{{ job.onSite && !job.custody ? 'Load the vehicle' : 'Pick up the vehicle' }}</span>
+              <b v-if="!job.custody && !job.onSite && job.distanceToNextM != null">{{ distance(job.distanceToNextM) }}</b>
             </li>
             <li :class="{ current: job.custody }" :title="destinationTitle(job)">
               <svg viewBox="0 0 24 24"><path :d="destinationIcon(job)" /></svg>
