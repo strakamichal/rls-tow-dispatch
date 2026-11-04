@@ -5,7 +5,9 @@
 that adds a new way to earn money: answering calls from drivers whose cars broke down and
 towing them home or to a service.
 
-> **Status:** playable beta, not released yet. Tested on The Gap with RLS 2.8.0.
+> **Status:** playable beta, not released yet. Tested on The Gap and West Coast USA with RLS 2.8.0.
+
+![Tow it, don't drive it: a rollback carrying an overheating car at sunset, with the Tow Dispatch phone app](docs/images/promo-delivery.jpg)
 
 ## What you do
 
@@ -13,6 +15,8 @@ Somewhere on the map a car has run out of fuel, blown a tyre, overheated or lost
 The owner calls dispatch. You pick the call on your phone, drive out with your tow truck or a
 car trailer, load the car and bring it to the owner's home or to a dealership's service bay.
 The price is agreed before you leave, so you always know what a job is worth.
+
+![Take the call: the job board in the Tow Dispatch phone app](docs/images/promo-board.jpg)
 
 As your Recovery skill grows, bigger and pricier calls open up: from cheap runabouts to
 luxury cars, exotics and heavy trucks. Better jobs pay better, and a bigger truck lets you
@@ -51,6 +55,8 @@ take them.
   Recovery), payouts appear in Wallet as recovery income, finished jobs go to the logbook, and
   the board and an active job are saved with your career, even with the car on a flatbed.
 
+![Your own rig pays more: the completion screen with the own rig bonus](docs/images/promo-completion.jpg)
+
 ## Requirements
 
 - BeamNG.drive 0.40
@@ -75,11 +81,18 @@ keep it zipped. Start or load an RLS career and open **Tow Dispatch** on the pho
 
 One job at a time.
 
+## Gallery
+
+| | |
+|---|---|
+| [![Loading an overheating car onto a tilted rollback](docs/images/gallery-loading.jpg)](docs/images/gallery-loading.jpg) | [![A rollback on a mountain road in autumn](docs/images/gallery-mountain-road.jpg)](docs/images/gallery-mountain-road.jpg) |
+| [![On the road with a police car behind](docs/images/gallery-on-the-road.jpg)](docs/images/gallery-on-the-road.jpg) | [![No tow truck yet: a pickup with a car trailer on West Coast USA](docs/images/gallery-car-trailer.jpg)](docs/images/gallery-car-trailer.jpg) |
+
 ## Known limitations
 
 - A job started on one map waits there while you travel; a car on a flatbed does not travel
   with you.
-- Tested on The Gap only so far; other RLS maps should work but are not verified.
+- Tested on The Gap and West Coast USA so far; other RLS maps should work but are not verified.
 - The app still has developer tools at the bottom (**Debug tools**); release builds hide them.
 
 ## Development
