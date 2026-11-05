@@ -5,7 +5,8 @@
 that adds a new way to earn money: answering calls from drivers whose cars broke down and
 towing them home or to a service.
 
-> **Latest release:** [1.0.0](https://github.com/strakamichal/rls-tow-dispatch/releases/latest).
+> **Latest release:** [1.0.0](https://github.com/strakamichal/rls-tow-dispatch/releases/latest), also on the
+> [BeamNG repository](https://beamng.com/resources/tow-dispatch-for-rls-career-overhaul.40188/).
 > Tested on The Gap and West Coast USA with RLS 2.8.0.
 
 ![Take the call: the job board in the Tow Dispatch phone app](docs/images/promo-board.jpg)
@@ -68,10 +69,13 @@ RLS Carjacking & Theft, which leaves tow customers' cars alone.
 
 ## Installation
 
-1. Download `tow_dispatch.zip` from the
-   [latest release](https://github.com/strakamichal/rls-tow-dispatch/releases/latest).
-2. Put it into your BeamNG `mods` folder next to RLS and keep it zipped.
-3. Start or load an RLS career and open **Tow Dispatch** on the phone.
+Subscribe to [Tow Dispatch on the BeamNG repository](https://beamng.com/resources/tow-dispatch-for-rls-career-overhaul.40188/)
+(or in the in-game Repository), then start or load an RLS career and open **Tow Dispatch** on
+the phone.
+
+Manual install: download `tow_dispatch.zip` from the
+[latest release](https://github.com/strakamichal/rls-tow-dispatch/releases/latest), put it into
+your BeamNG `mods` folder next to RLS and keep it zipped.
 
 Found a bug? [Open an issue](https://github.com/strakamichal/rls-tow-dispatch/issues/new/choose).
 
